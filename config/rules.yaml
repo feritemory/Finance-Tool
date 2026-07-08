@@ -1,0 +1,196 @@
+# Regeln zur automatischen Kategorisierung.
+#
+# Für jede Kategorie eine Liste von Stichwörtern (Kleinschreibung). Ein Umsatz
+# wird der ersten Kategorie zugeordnet, deren Stichwort im Empfänger-Namen,
+# Verwendungszweck oder Buchungstext vorkommt.
+#
+# Reihenfolge = Priorität (Einnahmen zuerst, damit z. B. "Gehalt" nicht
+# fälschlich als Ausgabe erkannt wird). Du kannst diese Datei jederzeit
+# anpassen; Änderungen greifen beim nächsten (Neu-)Kategorisieren.
+
+Gehalt:
+  - gehalt
+  - lohn
+  - salary
+  - bezuege
+  - bezüge
+  - verguetung
+  - vergütung
+
+Bafög:
+  - bafog
+  - bafög
+  - ausbildungsfoerderung
+  - ausbildungsförderung
+  - studentenwerk
+  - bva
+
+Überweisung an Sparkonten:
+  - trade republic
+  - traderepublic
+  - trade-republic
+  - revolut
+  - sparplan
+  - depot
+  - wertpapier
+
+Lebensmittel:
+  - rewe
+  - edeka
+  - aldi
+  - lidl
+  - kaufland
+  - penny
+  - netto
+  - real
+  - dm-drogerie
+  - dm drogerie
+  - rossmann
+  - denns
+  - alnatura
+  - bio company
+  - supermarkt
+  - baecker
+  - bäcker
+  - baeckerei
+  - bäckerei
+  - metzgerei
+  - wochenmarkt
+
+Auswärts Essen und Trinken:
+  - restaurant
+  - mcdonald
+  - burger king
+  - kfc
+  - lieferando
+  - uber eats
+  - ubereats
+  - wolt
+  - starbucks
+  - cafe
+  - café
+  - kaffee
+  - doener
+  - döner
+  - kebab
+  - pizza
+  - pizzeria
+  - subway
+  - imbiss
+  - vapiano
+  - dean & david
+  - l'osteria
+  - losteria
+  - hans im glueck
+  - five guys
+
+Reisen:
+  - deutsche bahn
+  - db vertrieb
+  - db fernverkehr
+  - db bahn
+  - flixbus
+  - flixmobility
+  - blablacar
+  - ryanair
+  - eurowings
+  - lufthansa
+  - easyjet
+  - wizz
+  - vueling
+  - booking.com
+  - airbnb
+  - hotel
+  - hostel
+  - opodo
+  - trip.com
+  - expedia
+  - flug
+
+Wohnkosten inkl. Internet und Handykosten:
+  - miete
+  - kaltmiete
+  - warmmiete
+  - vermieter
+  - hausverwaltung
+  - nebenkosten
+  - stadtwerke
+  - strom
+  - gas
+  - vodafone
+  - telekom
+  - deutsche telekom
+  - o2
+  - telefonica
+  - 1&1
+  - 1und1
+  - congstar
+  - pyur
+  - eon
+  - e.on
+  - rundfunk
+  - gez
+  - ard zdf
+
+Sport:
+  - fitness
+  - fitnessstudio
+  - mcfit
+  - fitx
+  - clever fit
+  - cleverfit
+  - urban sports
+  - urbansports
+  - gym
+  - sportverein
+  - basic-fit
+  - basic fit
+  - fitseven
+
+Freizeit:
+  - netflix
+  - spotify
+  - disney
+  - disney plus
+  - dazn
+  - amazon prime video
+  - youtube premium
+  - youtubepremium
+  - twitch
+  - steam
+  - playstation
+  - nintendo
+  - xbox
+  - cinema
+  - kino
+  - cinemaxx
+  - cineplex
+  - eventim
+  - ticketmaster
+  - freizeit
+  - schwimmbad
+  - therme
+
+Shoppen:
+  - amazon
+  - amzn
+  - zalando
+  - zara
+  - h&m
+  - hennes
+  - about you
+  - aboutyou
+  - mediamarkt
+  - media markt
+  - saturn
+  - ikea
+  - otto
+  - apple
+  - nike
+  - adidas
+  - decathlon
+  - c&a
+  - primark
+  - douglas
+  - shop
+  - store

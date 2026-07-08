@@ -1,0 +1,449 @@
+"""Finance-Tool – Streamlit-Desktop-App zur Einnahmen-/Ausgaben-Verwaltung.
+
+Start:  streamlit run app.py
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from finance import analytics, storage
+from finance.categories import CATEGORY_NAMES, COLOR_MAP, UNCATEGORIZED
+from finance.importer import parse_file
+from finance import sampledata
+
+st.set_page_config(page_title="Finance-Tool", page_icon="💶", layout="wide")
+
+EUR = "€"
+
+
+def fmt(v: float) -> str:
+    return f"{v:,.2f} {EUR}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+# ---------------------------------------------------------------------------
+# Daten laden / erststart
+# ---------------------------------------------------------------------------
+
+def ensure_seed() -> None:
+    """Beim allerersten Start Demo-Daten für 2026 laden."""
+    if "seed_checked" in st.session_state:
+        return
+    st.session_state["seed_checked"] = True
+    if storage.count() == 0:
+        txs = sampledata.generate(up_to=date.today())
+        storage.add_transactions(txs)
+        storage.set_recurring_bulk(_recurring_pairs())
+
+
+def _recurring_pairs() -> list[tuple[int, bool]]:
+    df = storage.load_dataframe()
+    rec = analytics.detect_recurring(df)
+    ids = {i for lst in rec["tx_ids"].tolist() for i in lst} if not rec.empty else set()
+    return [(int(i), i in ids) for i in df["id"].tolist()]
+
+
+@st.cache_data(show_spinner=False)
+def get_data(_version: int) -> pd.DataFrame:
+    return storage.load_dataframe()
+
+
+def refresh() -> None:
+    st.session_state["data_version"] = st.session_state.get("data_version", 0) + 1
+
+
+def load() -> pd.DataFrame:
+    return get_data(st.session_state.get("data_version", 0))
+
+
+# ---------------------------------------------------------------------------
+# Sidebar-Filter
+# ---------------------------------------------------------------------------
+
+def sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
+    st.sidebar.header("🔎 Filter")
+    if df.empty:
+        return df
+
+    years = analytics.available_years(df)
+    year_opts = ["Alle"] + [str(y) for y in years]
+    sel_year = st.sidebar.selectbox("Jahr", year_opts, index=len(year_opts) - 1)
+
+    d = df
+    if sel_year != "Alle":
+        d = d[d["year"] == int(sel_year)]
+
+        months = sorted(d["month"].unique().tolist())
+        month_opts = ["Alle"] + months
+        sel_month = st.sidebar.selectbox("Monat", month_opts, index=0)
+        if sel_month != "Alle":
+            d = d[d["month"] == sel_month]
+
+    cats = st.sidebar.multiselect("Kategorien", CATEGORY_NAMES, default=[])
+    if cats:
+        d = d[d["category"].isin(cats)]
+
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Tab: Übersicht (Dashboard)
+# ---------------------------------------------------------------------------
+
+def tab_overview(df: pd.DataFrame) -> None:
+    if df.empty:
+        st.info("Noch keine Daten. Importiere eine CSV im Tab **Import** oder lade "
+                "Demo-Daten in den **Einstellungen**.")
+        return
+
+    s = analytics.summary(df)
+    fix = analytics.monthly_fixed_costs(df)
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Einnahmen", fmt(s["einnahmen"]))
+    c2.metric("Ausgaben", fmt(s["ausgaben"]))
+    c3.metric("Sparen", fmt(s["sparen"]))
+    c4.metric("Saldo", fmt(s["saldo"]))
+    c5.metric("Fixkosten / Monat", fmt(fix))
+
+    st.divider()
+
+    # Zeitraum-Umschalter
+    gran = st.radio("Zeitliche Auflösung", ["Täglich", "Monatlich", "Jährlich"],
+                    index=1, horizontal=True)
+    freq = {"Täglich": "D", "Monatlich": "M", "Jährlich": "Y"}[gran]
+
+    ts = analytics.timeseries(df, freq)
+    left, right = st.columns([3, 2])
+
+    with left:
+        st.subheader("Einnahmen vs. Ausgaben")
+        fig = go.Figure()
+        fig.add_bar(x=ts["periode"], y=ts["einnahmen"], name="Einnahmen",
+                    marker_color="#2E7D32")
+        fig.add_bar(x=ts["periode"], y=-ts["ausgaben"], name="Ausgaben",
+                    marker_color="#E15759")
+        fig.add_bar(x=ts["periode"], y=-ts["sparen"], name="Sparen",
+                    marker_color="#4C72B0")
+        fig.add_trace(go.Scatter(x=ts["periode"], y=ts["saldo"], name="Saldo",
+                                 mode="lines+markers", line=dict(color="#111", width=2)))
+        fig.update_layout(barmode="relative", height=420,
+                          legend=dict(orientation="h", y=1.1),
+                          margin=dict(t=10, b=10, l=10, r=10))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with right:
+        st.subheader("Ausgaben nach Kategorie")
+        cat = analytics.by_category(df, "ausgabe")
+        if cat.empty:
+            st.caption("Keine Ausgaben im Zeitraum.")
+        else:
+            fig = px.pie(cat, names="category", values="betrag", hole=0.5,
+                         color="category", color_discrete_map=COLOR_MAP)
+            fig.update_traces(textposition="inside", textinfo="percent")
+            fig.update_layout(height=420, margin=dict(t=10, b=10, l=10, r=10),
+                              legend=dict(orientation="h", y=-0.1))
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Gestapelte Kategorien über die Zeit
+    st.subheader("Ausgaben je Kategorie im Zeitverlauf")
+    piv = analytics.category_over_time(df, freq, "ausgabe")
+    if not piv.empty:
+        long = piv.reset_index().melt(id_vars="periode", var_name="Kategorie",
+                                      value_name="Betrag")
+        fig = px.bar(long, x="periode", y="Betrag", color="Kategorie",
+                     color_discrete_map=COLOR_MAP)
+        fig.update_layout(height=400, margin=dict(t=10, b=10, l=10, r=10),
+                          legend=dict(orientation="h", y=-0.2))
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Tab: Fixkosten
+# ---------------------------------------------------------------------------
+
+def tab_fixed(df: pd.DataFrame) -> None:
+    st.subheader("🔁 Monatliche Fixkosten")
+    if df.empty:
+        st.info("Keine Daten vorhanden.")
+        return
+
+    rec = analytics.detect_recurring(df)
+    if rec.empty:
+        st.info("Es wurden (noch) keine wiederkehrenden Zahlungen erkannt. "
+                "Fixkosten werden erkannt, sobald ein Empfänger in mind. 3 "
+                "Monaten mit ähnlichem Betrag auftaucht.")
+        return
+
+    total = rec["median_betrag"].sum()
+    st.metric("Geschätzte Fixkosten pro Monat", fmt(total))
+
+    view = rec.rename(columns={
+        "merchant": "Empfänger (erkannt)",
+        "category": "Kategorie",
+        "monate": "Monate",
+        "median_betrag": "Betrag/Monat (Median)",
+    })[["Empfänger (erkannt)", "Kategorie", "Monate", "Betrag/Monat (Median)"]]
+    view["Betrag/Monat (Median)"] = view["Betrag/Monat (Median)"].map(fmt)
+
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.dataframe(view, use_container_width=True, hide_index=True)
+    with c2:
+        fig = px.bar(rec, x="median_betrag", y="merchant", orientation="h",
+                     color="category", color_discrete_map=COLOR_MAP,
+                     labels={"median_betrag": "€/Monat", "merchant": ""})
+        fig.update_layout(height=max(300, 40 * len(rec)), showlegend=False,
+                          margin=dict(t=10, b=10, l=10, r=10),
+                          yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.caption("Erkennung heuristisch anhand wiederkehrender Empfänger & Beträge. "
+               "Die Toleranz/Monatsschwelle kann in `finance/analytics.py` angepasst "
+               "werden.")
+
+
+# ---------------------------------------------------------------------------
+# Tab: Transaktionen (bearbeiten)
+# ---------------------------------------------------------------------------
+
+def tab_transactions(df: pd.DataFrame) -> None:
+    st.subheader("📋 Transaktionen")
+    if df.empty:
+        st.info("Keine Daten vorhanden.")
+        return
+
+    search = st.text_input("Suche (Empfänger / Verwendungszweck)", "")
+    d = df
+    if search:
+        mask = (d["counterparty"].str.contains(search, case=False, na=False) |
+                d["description"].str.contains(search, case=False, na=False))
+        d = d[mask]
+
+    show = d[["id", "date", "amount", "category", "counterparty",
+              "description", "is_recurring"]].copy()
+    show = show.sort_values("date", ascending=False)
+    show["date"] = show["date"].dt.strftime("%d.%m.%Y")
+    show["is_recurring"] = show["is_recurring"].astype(bool)
+    show = show.rename(columns={
+        "date": "Datum", "amount": "Betrag", "category": "Kategorie",
+        "counterparty": "Empfänger", "description": "Verwendungszweck",
+        "is_recurring": "Fixkosten",
+    })
+
+    edited = st.data_editor(
+        show, use_container_width=True, hide_index=True, height=520,
+        disabled=["id", "Datum", "Betrag", "Empfänger", "Verwendungszweck"],
+        column_config={
+            "id": None,
+            "Betrag": st.column_config.NumberColumn(format="%.2f €"),
+            "Kategorie": st.column_config.SelectboxColumn(options=CATEGORY_NAMES),
+            "Fixkosten": st.column_config.CheckboxColumn(),
+        },
+        key="tx_editor",
+    )
+
+    if st.button("💾 Änderungen speichern", type="primary"):
+        orig = show.set_index("id")
+        new = edited.set_index("id")
+        changes = 0
+        for tx_id in new.index:
+            if new.loc[tx_id, "Kategorie"] != orig.loc[tx_id, "Kategorie"]:
+                storage.update_category(int(tx_id), new.loc[tx_id, "Kategorie"], manual=True)
+                changes += 1
+            if bool(new.loc[tx_id, "Fixkosten"]) != bool(orig.loc[tx_id, "Fixkosten"]):
+                storage.set_recurring(int(tx_id), bool(new.loc[tx_id, "Fixkosten"]), manual=True)
+                changes += 1
+        refresh()
+        st.success(f"{changes} Änderung(en) gespeichert.")
+        st.rerun()
+
+    st.caption(f"{len(show)} Transaktionen angezeigt. Manuell geänderte Kategorien "
+               "bleiben bei einer Neu-Kategorisierung erhalten.")
+
+
+# ---------------------------------------------------------------------------
+# Tab: Import
+# ---------------------------------------------------------------------------
+
+def tab_import(df: pd.DataFrame) -> None:
+    st.subheader("📥 Umsätze importieren")
+
+    st.markdown(
+        "**So exportierst du deine Umsätze bei der Consorsbank:**\n"
+        "1. Im Online-Banking / in der App unter **Umsätze** den Zeitraum wählen.\n"
+        "2. Export als **CSV** (oder CAMT/XML) herunterladen.\n"
+        "3. Datei hier hochladen – Kategorien werden automatisch zugeordnet.\n\n"
+        "Der Import erkennt Duplikate automatisch, du kannst also gefahrlos "
+        "überlappende Zeiträume laden."
+    )
+
+    files = st.file_uploader("CSV- oder CAMT/XML-Dateien", type=["csv", "xml"],
+                             accept_multiple_files=True)
+    if files and st.button("Importieren", type="primary"):
+        total_new = total_skip = 0
+        errors = []
+        for f in files:
+            try:
+                txs = parse_file(f.name, f.read())
+                new, skip = storage.add_transactions(txs)
+                total_new += new
+                total_skip += skip
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{f.name}: {exc}")
+        storage.set_recurring_bulk(_recurring_pairs())
+        refresh()
+        st.success(f"{total_new} neue Umsätze importiert, {total_skip} Duplikate übersprungen.")
+        for e in errors:
+            st.error(e)
+        st.rerun()
+
+    st.divider()
+    with st.expander("🔗 Automatischer Kontoabruf (PSD2 / Consorsbank) – optional"):
+        _psd2_ui()
+
+
+def _psd2_ui() -> None:
+    from finance.banking import gocardless
+
+    st.markdown(
+        "Über die kostenlose **GoCardless Bank Account Data**-Schnittstelle "
+        "(früher Nordigen) lassen sich Umsätze direkt aus deinem Consorsbank-Konto "
+        "abrufen – PSD2-konform.\n\n"
+        "1. Kostenloses Konto: https://bankaccountdata.gocardless.com/\n"
+        "2. Secret ID + Secret Key erzeugen und unten eintragen (oder als "
+        "Umgebungsvariablen `GOCARDLESS_SECRET_ID` / `GOCARDLESS_SECRET_KEY`).\n"
+        "3. Bank-Login-Link erzeugen, einmalig bei der Consorsbank bestätigen "
+        "(gilt 90 Tage), danach Umsätze abrufen."
+    )
+
+    col1, col2 = st.columns(2)
+    sid = col1.text_input("Secret ID", type="password",
+                          value=st.session_state.get("gc_sid", ""))
+    skey = col2.text_input("Secret Key", type="password",
+                           value=st.session_state.get("gc_skey", ""))
+
+    if st.button("1) Bank-Login-Link erzeugen"):
+        try:
+            client = gocardless.GoCardlessClient(sid or None, skey or None)
+            req = client.create_requisition()
+            st.session_state["gc_sid"] = sid
+            st.session_state["gc_skey"] = skey
+            st.session_state["gc_req_id"] = req["id"]
+            st.success("Link erzeugt. Bitte einloggen und Zugriff bestätigen:")
+            st.link_button("🔐 Bei Consorsbank anmelden", req["link"])
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Fehler: {exc}")
+
+    if st.session_state.get("gc_req_id") and st.button("2) Umsätze abrufen"):
+        try:
+            client = gocardless.GoCardlessClient(
+                st.session_state.get("gc_sid") or None,
+                st.session_state.get("gc_skey") or None)
+            accounts = client.list_accounts(st.session_state["gc_req_id"])
+            if not accounts:
+                st.warning("Noch kein Konto verknüpft – Bank-Login abgeschlossen?")
+                return
+            total = 0
+            for acc in accounts:
+                txs = client.get_transactions(acc)
+                new, _ = storage.add_transactions(txs)
+                total += new
+            storage.set_recurring_bulk(_recurring_pairs())
+            refresh()
+            st.success(f"{total} Umsätze abgerufen und importiert.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Fehler: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Tab: Einstellungen
+# ---------------------------------------------------------------------------
+
+def tab_settings(df: pd.DataFrame) -> None:
+    st.subheader("⚙️ Einstellungen & Daten")
+
+    st.markdown(f"**Gespeicherte Umsätze:** {storage.count()}")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.markdown("**Neu kategorisieren**")
+        st.caption("Wendet die Regeln aus `config/rules.yaml` erneut an "
+                   "(manuelle Zuordnungen bleiben erhalten).")
+        if st.button("🔄 Regeln neu anwenden"):
+            n = storage.recategorize_all()
+            storage.set_recurring_bulk(_recurring_pairs())
+            refresh()
+            st.success(f"{n} Umsätze neu kategorisiert.")
+
+    with c2:
+        st.markdown("**Demo-Daten**")
+        st.caption("Lädt Beispiel-Umsätze ab Januar 2026.")
+        if st.button("➕ Demo-Daten laden"):
+            txs = sampledata.generate(up_to=date.today())
+            new, skip = storage.add_transactions(txs)
+            storage.set_recurring_bulk(_recurring_pairs())
+            refresh()
+            st.success(f"{new} Demo-Umsätze geladen ({skip} bereits vorhanden).")
+
+    with c3:
+        st.markdown("**Zurücksetzen**")
+        st.caption("Löscht alle gespeicherten Umsätze unwiderruflich.")
+        confirm = st.checkbox("Ich bin sicher")
+        if st.button("🗑️ Alle Daten löschen", disabled=not confirm):
+            storage.clear_all()
+            refresh()
+            st.success("Alle Daten gelöscht.")
+            st.rerun()
+
+    st.divider()
+    if not df.empty:
+        csv = df[["date", "amount", "currency", "category", "counterparty",
+                  "description", "is_recurring"]].copy()
+        csv["date"] = csv["date"].dt.strftime("%Y-%m-%d")
+        st.download_button("⬇️ Alle Umsätze als CSV exportieren",
+                           csv.to_csv(index=False).encode("utf-8"),
+                           file_name="umsaetze_export.csv", mime="text/csv")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    ensure_seed()
+    st.title("💶 Finance-Tool")
+    st.caption("Einnahmen & Ausgaben tracken, kategorisieren, visualisieren – "
+               "täglich, monatlich, jährlich.")
+
+    df_all = load()
+    df = sidebar_filters(df_all)
+
+    st.sidebar.divider()
+    st.sidebar.caption(f"Datenbestand: {len(df_all)} Umsätze")
+    if not df_all.empty:
+        st.sidebar.caption(
+            f"Zeitraum: {df_all['date'].min():%d.%m.%Y} – {df_all['date'].max():%d.%m.%Y}")
+
+    tabs = st.tabs(["📊 Übersicht", "🔁 Fixkosten", "📋 Transaktionen",
+                    "📥 Import", "⚙️ Einstellungen"])
+    with tabs[0]:
+        tab_overview(df)
+    with tabs[1]:
+        tab_fixed(df)
+    with tabs[2]:
+        tab_transactions(df)
+    with tabs[3]:
+        tab_import(df_all)
+    with tabs[4]:
+        tab_settings(df_all)
+
+
+if __name__ == "__main__":
+    main()

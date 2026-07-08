@@ -1,0 +1,6 @@
+streamlit>=1.30
+pandas>=2.0
+plotly>=5.18
+PyYAML>=6.0
+# Optional – nur für den automatischen PSD2-Kontoabruf (GoCardless):
+requests>=2.31

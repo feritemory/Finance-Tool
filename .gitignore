@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Lokale Daten (deine echten Umsätze bleiben privat und werden NICHT eingecheckt)
+data/*.db
+data/*.csv
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+
+# Ordner behalten
+!data/.gitkeep
