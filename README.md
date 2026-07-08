@@ -34,6 +34,30 @@ Januar 2026** geladen, damit du sofort etwas siehst.
 > streamlit run app.py
 > ```
 
+### Problembehebung (Windows)
+
+**Das `cmd`-Fenster öffnet sich und schließt sich sofort wieder?**
+Das passiert, wenn ein Fehler auftritt (meist: Python nicht installiert oder
+nicht im PATH). Das aktuelle `run.bat` fängt das ab und bleibt mit einer
+Meldung offen. Falls es dennoch sofort schließt, öffne die Eingabeaufforderung
+manuell und starte es von Hand, damit die Meldung stehen bleibt:
+
+1. `Windows-Taste` drücken, `cmd` eingeben, Enter.
+2. In den Projektordner wechseln (Pfad anpassen):
+   ```bat
+   cd /d "C:\Pfad\zu\Finance-Tool"
+   run.bat
+   ```
+
+**„Python was not found" / es öffnet sich der Microsoft Store?**
+Dann ist Python nicht (richtig) installiert:
+1. Python 3 von <https://www.python.org/downloads/> installieren.
+2. Im Installer unbedingt **„Add python.exe to PATH"** anhaken.
+3. Danach cmd-Fenster neu öffnen und `run.bat` erneut ausführen.
+
+**Installation hängt oder schlägt fehl?** Lösche den Ordner `.venv` und starte
+`run.bat` erneut – er baut die Umgebung dann neu auf.
+
 ---
 
 ## Funktionen
