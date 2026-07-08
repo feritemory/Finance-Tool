@@ -55,6 +55,25 @@ Dann ist Python nicht (richtig) installiert:
 2. Im Installer unbedingt **„Add python.exe to PATH"** anhaken.
 3. Danach cmd-Fenster neu öffnen und `run.bat` erneut ausführen.
 
+**Fehler „Could not install packages due to an OSError … No such file or
+directory" beim Installieren von Streamlit/altair?**
+Das ist die **260-Zeichen-Pfadgrenze** von Windows. Dein Projektordner liegt zu
+tief verschachtelt (z. B. `C:\Users\...\Finance-Tool-claude-...\Finance-Tool-claude-...\`),
+und die tief verschachtelten Streamlit-Dateien sprengen dann das Limit.
+
+Lösung:
+1. Ordner an einen **kurzen** Pfad verschieben, z. B. `C:\Finance-Tool`.
+2. Darin den (kaputten) Unterordner `.venv` löschen.
+3. `run.bat` erneut starten.
+
+`run.bat` warnt inzwischen selbst, wenn der Pfad zu lang ist. Alternativ kannst
+du in Windows die lange Pfadunterstützung aktivieren (Administrator-PowerShell):
+```powershell
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+```
+Danach den Rechner neu starten.
+
 **Installation hängt oder schlägt fehl?** Lösche den Ordner `.venv` und starte
 `run.bat` erneut – er baut die Umgebung dann neu auf.
 

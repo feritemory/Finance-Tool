@@ -9,6 +9,23 @@ echo   Finance-Tool
 echo ============================================
 echo.
 
+REM --- Pfadlaenge pruefen (Windows begrenzt Pfade auf 260 Zeichen) ---
+call :strlen PATHLEN "%CD%"
+if %PATHLEN% GTR 100 (
+  echo [WARNUNG] Der Projektpfad ist sehr lang ^(%PATHLEN% Zeichen^):
+  echo   %CD%
+  echo.
+  echo Windows begrenzt Pfade auf 260 Zeichen. Bei so langen Pfaden schlaegt die
+  echo Installation von Streamlit fehl ^(Fehler "No such file or directory"^).
+  echo.
+  echo EMPFEHLUNG: Verschiebe diesen Ordner an einen KURZEN Ort, z. B.  C:\Finance-Tool
+  echo Loesche danach den Unterordner ".venv" ^(falls vorhanden^) und starte run.bat erneut.
+  echo.
+  choice /C JN /M "Trotzdem fortfahren"
+  if errorlevel 2 exit /b 1
+  echo.
+)
+
 REM --- Python-Interpreter finden (erst py-Launcher, dann python) ---
 set "PY="
 py -3 --version >nul 2>&1 && set "PY=py -3"
@@ -46,7 +63,9 @@ if not exist ".venv\.installed" (
   "%VENV_PY%" -m pip install -r requirements.txt
   if errorlevel 1 (
     echo [FEHLER] Installation der Abhaengigkeiten fehlgeschlagen.
-    echo Pruefe deine Internetverbindung und starte run.bat erneut.
+    echo Haeufigste Ursache: zu langer Projektpfad ^(siehe Warnung oben^) oder
+    echo fehlende Internetverbindung. Verschiebe den Ordner nach C:\Finance-Tool,
+    echo loesche ".venv" und starte run.bat erneut.
     pause
     exit /b 1
   )
@@ -63,3 +82,20 @@ REM Falls Streamlit unerwartet beendet wird, Fenster offen halten:
 echo.
 echo Die App wurde beendet.
 pause
+exit /b 0
+
+REM ---------------------------------------------------------------------------
+REM Hilfsroutine: Laenge einer Zeichenkette bestimmen -> %~1 = Ergebnis-Variable
+REM ---------------------------------------------------------------------------
+:strlen
+setlocal enabledelayedexpansion
+set "s=%~2#"
+set "len=0"
+for %%A in (4096 2048 1024 512 256 128 64 32 16 8 4 2 1) do (
+  if "!s:~%%A,1!" neq "" (
+    set /a len+=%%A
+    set "s=!s:~%%A!"
+  )
+)
+endlocal & set "%~1=%len%"
+goto :eof
