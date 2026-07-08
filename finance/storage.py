@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     currency      TEXT DEFAULT 'EUR',
     counterparty  TEXT,
     iban          TEXT,
+    bic           TEXT,
     description   TEXT,
     booking_text  TEXT,
     category      TEXT,
@@ -56,6 +57,11 @@ def _connect():
 def init_db() -> None:
     with _connect() as conn:
         conn.executescript(SCHEMA)
+        # Leichte Migration: fehlende Spalten in bestehenden DBs ergänzen.
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(transactions)")}
+        for col, ddl in (("bic", "bic TEXT"),):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE transactions ADD COLUMN {ddl}")
 
 
 def add_transactions(transactions: list[Transaction]) -> tuple[int, int]:
@@ -64,17 +70,18 @@ def add_transactions(transactions: list[Transaction]) -> tuple[int, int]:
     inserted = skipped = 0
     with _connect() as conn:
         for t in transactions:
-            category = categorize(t.counterparty, t.description, t.booking_text, t.amount)
+            category = categorize(t.counterparty, t.description, t.booking_text,
+                                  t.amount, t.iban, t.bic)
             try:
                 conn.execute(
                     """INSERT INTO transactions
                        (dedup_hash, date, value_date, amount, currency, counterparty,
-                        iban, description, booking_text, category, source)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                        iban, bic, description, booking_text, category, source)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         t.dedup_hash(), t.date.isoformat(),
                         t.value_date.isoformat() if t.value_date else None,
-                        t.amount, t.currency, t.counterparty, t.iban,
+                        t.amount, t.currency, t.counterparty, t.iban, t.bic,
                         t.description, t.booking_text, category, t.source,
                     ),
                 )
@@ -102,7 +109,7 @@ def load_dataframe() -> pd.DataFrame:
 def _empty_frame() -> pd.DataFrame:
     cols = [
         "id", "dedup_hash", "date", "value_date", "amount", "currency",
-        "counterparty", "iban", "description", "booking_text", "category",
+        "counterparty", "iban", "bic", "description", "booking_text", "category",
         "category_manual", "is_recurring", "recurring_manual", "source",
         "imported_at", "year", "month", "day",
     ]
@@ -140,12 +147,13 @@ def recategorize_all() -> int:
     """Kategorisiert alle nicht manuell gesetzten Umsätze neu (nach Regeländerung)."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, counterparty, description, booking_text, amount "
+            "SELECT id, counterparty, description, booking_text, amount, iban, bic "
             "FROM transactions WHERE category_manual=0"
         ).fetchall()
         n = 0
         for r in rows:
-            cat = categorize(r["counterparty"], r["description"], r["booking_text"], r["amount"])
+            cat = categorize(r["counterparty"], r["description"], r["booking_text"],
+                             r["amount"], r["iban"], r["bic"])
             conn.execute("UPDATE transactions SET category=? WHERE id=?", (cat, r["id"]))
             n += 1
     return n

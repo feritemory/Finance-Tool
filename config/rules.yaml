@@ -29,7 +29,10 @@ Bafög:
   - trade republic
   - traderepublic
   - trade-republic
+  - trbkdebb          # BIC Trade Republic (auch bei "Dauerauftrag" ohne Namen)
   - revolut
+  - revodeb2          # BIC Revolut
+  - scalable
   - sparplan
   - depot
   - wertpapier
@@ -42,7 +45,6 @@ Lebensmittel:
   - kaufland
   - penny
   - netto
-  - real
   - dm-drogerie
   - dm drogerie
   - rossmann
@@ -83,6 +85,11 @@ Auswärts Essen und Trinken:
   - losteria
   - hans im glueck
   - five guys
+  - kantine
+  - curry 36
+  - currywurst
+  - eisdiele
+  - ital eis
 
 Reisen:
   - deutsche bahn
@@ -106,6 +113,19 @@ Reisen:
   - trip.com
   - expedia
   - flug
+  - mietwagen
+  - check24
+  # Öffentlicher Nahverkehr / Mobilität
+  - s-bahn
+  - bvg
+  - vbb
+  - deutschlandticket
+  - nextbike
+  - limebike
+  - lime germany
+  - tier
+  - bolt
+  - uber
 
 Wohnkosten inkl. Internet und Handykosten:
   - miete
@@ -116,7 +136,10 @@ Wohnkosten inkl. Internet und Handykosten:
   - nebenkosten
   - stadtwerke
   - strom
-  - gas
+  - erdgas
+  - energie
+  - maingau
+  - wärmestrom
   - vodafone
   - telekom
   - deutsche telekom
@@ -146,6 +169,9 @@ Sport:
   - basic-fit
   - basic fit
   - fitseven
+  - urban apes
+  - boulder
+  - kletter
 
 Freizeit:
   - netflix
@@ -194,3 +220,9 @@ Shoppen:
   - douglas
   - shop
   - store
+  - uniqlo
+  - hellweg
+  - vinted
+  - kleiderkreisel
+  - mediamarkt
+  - zara

@@ -27,6 +27,7 @@ class Transaction:
     description: str           # Verwendungszweck
     booking_text: str          # Buchungstext / Art
     source: str                # Dateiname / Quelle
+    bic: str = ""              # BIC/SWIFT (hilft bei der Kategorisierung)
 
     def dedup_hash(self) -> str:
         raw = f"{self.date.isoformat()}|{self.amount:.2f}|{self.counterparty}|{self.description}"
@@ -115,6 +116,7 @@ _COLUMN_ALIASES = {
         "begünstigter", "zahlungspflichtiger", "payee",
     ],
     "iban": ["iban", "kontonummer", "iban/konto-nr.", "konto-nr", "account"],
+    "bic": ["bic", "bic/blz", "swift", "blz"],
     "description": [
         "verwendungszweck", "buchungstext", "vwz", "zweck", "beschreibung",
         "reference", "remittance",
@@ -170,25 +172,36 @@ def _decode(data: bytes) -> str:
 def parse_csv(data: bytes, source: str = "csv") -> list[Transaction]:
     text = _decode(data)
 
-    # Manche Bank-Exporte haben Vorspann-Zeilen ("Umsätze Girokonto ..." usw.).
-    # Wir suchen die Header-Zeile: die erste Zeile, die mind. 3 Trennzeichen und
-    # ein bekanntes Alias enthält.
+    # Bank-Exporte (z. B. Consorsbank) haben oft mehrere Vorspann-Blöcke
+    # ("Allgemeine Informationen", "Kontostand", ...) vor der eigentlichen
+    # Umsatztabelle. Wir suchen die echte Kopfzeile: die erste Zeile, in der
+    # sich sowohl eine Datums- als auch eine Betragsspalte erkennen lässt.
+    # (Reines Stichwort-Raten scheitert an Zeilen wie "Konto;Inhaber;Exportdatum".)
     lines = text.splitlines()
-    header_idx = 0
-    all_aliases = {a for lst in _COLUMN_ALIASES.values() for a in lst}
-    for i, line in enumerate(lines[:30]):
-        low = line.lower()
-        if any(a in low for a in ("betrag", "buchung", "datum", "amount")) and \
-                (line.count(";") >= 2 or line.count(",") >= 2 or line.count("\t") >= 2):
+    header_idx: int | None = None
+    delimiter = ";"
+    for i, line in enumerate(lines[:100]):
+        if ";" not in line and "," not in line and "\t" not in line:
+            continue
+        delim = _pick_delimiter(line)
+        parts = next(csv.reader([line], delimiter=delim, quotechar='"',
+                                skipinitialspace=True), [])
+        if len(parts) < 3:
+            continue
+        cand = _detect_columns(parts)
+        if "date" in cand and "amount" in cand:
             header_idx = i
+            delimiter = delim
             break
 
-    body = "\n".join(lines[header_idx:])
-    # Trennzeichen anhand der Kopfzeile bestimmen (NICHT raten): deutsche
-    # Bank-CSVs nutzen ';' als Trenner und ',' als Dezimalzeichen – der
-    # csv.Sniffer verwechselt das häufig. Zählen ist zuverlässiger.
-    delimiter = _pick_delimiter(lines[header_idx] if header_idx < len(lines) else "")
+    if header_idx is None:
+        first = lines[0] if lines else ""
+        raise ValueError(
+            "Keine Umsatz-Kopfzeile mit Datums- und Betragsspalte gefunden. "
+            "Ist das ein Kontoumsatz-Export? Erste Zeile: " + first[:200]
+        )
 
+    body = "\n".join(lines[header_idx:])
     reader = csv.reader(io.StringIO(body), delimiter=delimiter, quotechar='"',
                         skipinitialspace=True)
     rows = list(reader)
@@ -197,12 +210,6 @@ def parse_csv(data: bytes, source: str = "csv") -> list[Transaction]:
 
     header = rows[0]
     cols = _detect_columns(header)
-    if "date" not in cols or "amount" not in cols:
-        raise ValueError(
-            f"CSV konnte nicht erkannt werden (Trennzeichen '{delimiter}'). "
-            "Benötige mindestens eine Datums- und eine Betragsspalte. "
-            "Erkannte Spalten: " + " | ".join(header)
-        )
 
     def get(row: list[str], field: str) -> str:
         idx = cols.get(field)
@@ -217,6 +224,11 @@ def parse_csv(data: bytes, source: str = "csv") -> list[Transaction]:
         raw_amount = get(row, "amount")
         raw_date = get(row, "date")
         if not raw_amount or not raw_date:
+            continue
+        # Vorgemerkte / noch nicht final gebuchte Umsätze überspringen –
+        # sie werden später final gebucht und wären sonst Duplikate.
+        raw_valuta = get(row, "value_date").lower()
+        if raw_valuta in ("vorgemerkt", "offen", "pending", "reserviert"):
             continue
         d = parse_date(raw_date)
         if d is None:
@@ -236,6 +248,7 @@ def parse_csv(data: bytes, source: str = "csv") -> list[Transaction]:
             description=_clean(get(row, "description")),
             booking_text=_clean(get(row, "booking_text")),
             source=source,
+            bic=get(row, "bic"),
         ))
     return transactions
 

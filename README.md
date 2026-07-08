@@ -126,6 +126,24 @@ laden. Der CSV-Parser versteht das deutsche Zahlen- und Datumsformat und erkennt
 die Spalten flexibel – funktioniert daher auch mit Exporten von Sparkasse, DKB,
 ING u. a.
 
+**Speziell auf den Consorsbank-Export abgestimmt:**
+- Der mehrzeilige Vorspann ("Allgemeine Informationen", "Kontostand" …) wird
+  übersprungen; die eigentliche Umsatz-Kopfzeile wird automatisch gefunden.
+- **Vorgemerkte** Umsätze (Spalte *Valuta = „vorgemerkt"*) werden ausgelassen,
+  da sie noch nicht final gebucht sind und sonst doppelt zählen würden.
+- Überträge auf **Trade Republic** und **Revolut** laufen bei der Consorsbank
+  oft nur als „Dauerauftrag" ohne erkennbaren Namen – sie werden über die
+  **BIC** (`TRBKDEBB` bzw. `REVODEB2`) automatisch der Kategorie
+  *Überweisung an Sparkonten* zugeordnet.
+- Durch Zeilenumbrüche zerrissene Wörter im Verwendungszweck (z. B.
+  „Urban Sp orts") werden bei der Kategorisierung wieder zusammengesetzt.
+
+Einnahme vs. Ausgabe wird am **Vorzeichen** des Betrags festgemacht: Jeder
+Geldeingang (auch Steuererstattungen oder Rückzahlungen von Freunden) zählt als
+Eingang. Lokale Kartenzahlungen, Bargeldabhebungen und PayPal-Zahlungen lassen
+sich nicht immer automatisch zuordnen und landen in *Sonstiges* – im Tab
+**📋 Transaktionen** kannst du sie mit einem Klick dauerhaft umkategorisieren.
+
 **Halb-automatisieren:** Lade dir einmal im Monat den CSV-Export herunter (bei
 der Consorsbank per E-Mail-Benachrichtigung an neue Umsätze erinnern lassen) und
 ziehe ihn in den Import-Tab. Zwei Klicks pro Monat.

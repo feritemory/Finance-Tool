@@ -6,21 +6,25 @@ import re
 
 import pandas as pd
 
-from .categories import CATEGORY_BY_NAME, is_expense, is_income, is_saving
+from .categories import is_saving
 
 
 # ---------------------------------------------------------------------------
 # Grund-Kennzahlen
+#
+# Einnahme/Ausgabe werden am VORZEICHEN festgemacht (Geld rein = Einnahme,
+# Geld raus = Ausgabe) – nicht an der Kategorie. So zählen auch Erstattungen,
+# Rückzahlungen von Freunden usw. korrekt als Eingang. Ausgenommen sind
+# Überträge auf eigene Sparkonten (Kategorie-Typ "sparen"), die separat als
+# "Sparen" ausgewiesen werden und keine echten Ausgaben sind.
 # ---------------------------------------------------------------------------
 
-def _mask(df: pd.DataFrame, typ: str) -> pd.Series:
-    if df.empty:
-        return pd.Series(dtype=bool)
-    if typ == "einnahme":
-        return df["category"].map(is_income)
-    if typ == "sparen":
-        return df["category"].map(is_saving)
-    return df["category"].map(is_expense)
+def _masks(df: pd.DataFrame):
+    """(is_saving, is_income, is_expense) als boolesche Series."""
+    sav = df["category"].map(is_saving)
+    inc = (~sav) & (df["amount"] > 0)
+    exp = (~sav) & (df["amount"] < 0)
+    return sav, inc, exp
 
 
 def summary(df: pd.DataFrame) -> dict:
@@ -28,9 +32,10 @@ def summary(df: pd.DataFrame) -> dict:
     if df.empty:
         return {"einnahmen": 0.0, "ausgaben": 0.0, "sparen": 0.0,
                 "saldo": 0.0, "sparquote": 0.0}
-    einnahmen = df.loc[_mask(df, "einnahme"), "amount"].sum()
-    ausgaben = -df.loc[_mask(df, "ausgabe"), "amount"].sum()   # positiv machen
-    sparen = -df.loc[_mask(df, "sparen"), "amount"].sum()
+    sav, inc, exp = _masks(df)
+    einnahmen = df.loc[inc, "amount"].sum()
+    ausgaben = -df.loc[exp, "amount"].sum()          # positiv machen
+    sparen = -df.loc[sav, "amount"].sum()            # netto auf Sparkonten
     saldo = df["amount"].sum()
     sparquote = (sparen / einnahmen * 100) if einnahmen > 0 else 0.0
     return {
@@ -46,13 +51,15 @@ def by_category(df: pd.DataFrame, typ: str = "ausgabe") -> pd.DataFrame:
     """Summen je Kategorie (Betrag positiv). typ: 'ausgabe'|'einnahme'|'sparen'."""
     if df.empty:
         return pd.DataFrame(columns=["category", "betrag"])
-    sub = df[_mask(df, typ)]
+    sav, inc, exp = _masks(df)
+    mask = {"einnahme": inc, "sparen": sav}.get(typ, exp)
+    sub = df[mask]
     if sub.empty:
         return pd.DataFrame(columns=["category", "betrag"])
     grp = sub.groupby("category")["amount"].sum().reset_index()
     grp["betrag"] = grp["amount"].abs()
     grp = grp[["category", "betrag"]].sort_values("betrag", ascending=False)
-    return grp.reset_index(drop=True)
+    return grp[grp["betrag"] > 0].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -69,10 +76,11 @@ def timeseries(df: pd.DataFrame, freq: str = "M") -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
 
     d = df.copy()
+    sav, inc, exp = _masks(d)
     d["periode"] = d["date"].dt.to_period(freq).dt.to_timestamp()
-    d["einnahmen"] = d["amount"].where(_mask(d, "einnahme"), 0.0)
-    d["ausgaben"] = (-d["amount"]).where(_mask(d, "ausgabe"), 0.0)
-    d["sparen"] = (-d["amount"]).where(_mask(d, "sparen"), 0.0)
+    d["einnahmen"] = d["amount"].where(inc, 0.0)
+    d["ausgaben"] = (-d["amount"]).where(exp, 0.0)
+    d["sparen"] = (-d["amount"]).where(sav, 0.0)
 
     g = d.groupby("periode").agg(
         einnahmen=("einnahmen", "sum"),
@@ -88,7 +96,9 @@ def category_over_time(df: pd.DataFrame, freq: str = "M",
     """Pivot: Periode x Kategorie (Beträge positiv) – für gestapelte Diagramme."""
     if df.empty:
         return pd.DataFrame()
-    sub = df[_mask(df, typ)].copy()
+    sav, inc, exp = _masks(df)
+    mask = {"einnahme": inc, "sparen": sav}.get(typ, exp)
+    sub = df[mask].copy()
     if sub.empty:
         return pd.DataFrame()
     sub["periode"] = sub["date"].dt.to_period(freq).dt.to_timestamp()

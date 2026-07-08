@@ -38,16 +38,24 @@ def load_rules() -> dict[str, list[str]]:
 
 
 def categorize(counterparty: str, description: str, booking_text: str,
-               amount: float) -> str:
+               amount: float, iban: str = "", bic: str = "") -> str:
     """Ordnet einem Umsatz eine Kategorie zu.
 
-    Sucht in Empfänger, Verwendungszweck und Buchungstext nach Stichwörtern.
+    Sucht in Empfänger, Verwendungszweck, Buchungstext sowie IBAN/BIC nach
+    Stichwörtern (die BIC identifiziert z. B. Trade Republic / Revolut, wenn
+    im Text nur "Dauerauftrag" steht).
+
+    Zusätzlich wird eine leerzeichenfreie Variante geprüft: Manche Banken
+    (u. a. Consorsbank) zerreißen Wörter durch Zeilenumbrüche im
+    Verwendungszweck ("Urban Sp orts", "DB Vertr ieb") – ohne Leerzeichen
+    greifen die Stichwörter dann trotzdem.
+
     Einnahmen-Kategorien werden nur bei positivem Betrag gewählt, damit z. B.
     eine Rücklastschrift von "Gehalt" nicht als Einnahme zählt.
     """
-    haystack = " ".join(
-        part.lower() for part in (counterparty, description, booking_text) if part
-    )
+    parts = (counterparty, description, booking_text, iban, bic)
+    haystack = " ".join(p.lower() for p in parts if p)
+    haystack_nospace = haystack.replace(" ", "")
 
     rules = load_rules()
     for cat, keywords in rules.items():
@@ -55,7 +63,12 @@ def categorize(counterparty: str, description: str, booking_text: str,
         if is_income(cat) and amount <= 0:
             continue
         for kw in keywords:
-            if kw and kw in haystack:
+            if not kw:
+                continue
+            if kw in haystack:
+                return cat
+            kw_nospace = kw.replace(" ", "")
+            if len(kw_nospace) >= 5 and kw_nospace in haystack_nospace:
                 return cat
 
     return UNCATEGORIZED
