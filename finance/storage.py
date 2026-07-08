@@ -160,3 +160,19 @@ def count() -> int:
 def clear_all() -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM transactions")
+
+
+def count_demo() -> int:
+    """Anzahl der Demo-/Beispiel-Buchungen (source = 'sample')."""
+    init_db()
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE source='sample'"
+        ).fetchone()[0]
+
+
+def clear_demo() -> int:
+    """Entfernt nur die Demo-Buchungen, echte importierte Umsätze bleiben erhalten."""
+    with _connect() as conn:
+        cur = conn.execute("DELETE FROM transactions WHERE source='sample'")
+        return cur.rowcount

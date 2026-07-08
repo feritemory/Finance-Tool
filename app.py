@@ -30,17 +30,6 @@ def fmt(v: float) -> str:
 # Daten laden / erststart
 # ---------------------------------------------------------------------------
 
-def ensure_seed() -> None:
-    """Beim allerersten Start Demo-Daten für 2026 laden."""
-    if "seed_checked" in st.session_state:
-        return
-    st.session_state["seed_checked"] = True
-    if storage.count() == 0:
-        txs = sampledata.generate(up_to=date.today())
-        storage.add_transactions(txs)
-        storage.set_recurring_bulk(_recurring_pairs())
-
-
 def _recurring_pairs() -> list[tuple[int, bool]]:
     df = storage.load_dataframe()
     rec = analytics.detect_recurring(df)
@@ -97,8 +86,10 @@ def sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 def tab_overview(df: pd.DataFrame) -> None:
     if df.empty:
-        st.info("Noch keine Daten. Importiere eine CSV im Tab **Import** oder lade "
-                "Demo-Daten in den **Einstellungen**.")
+        st.info("👋 Willkommen! Noch keine Umsätze vorhanden. Lade deine Kontoauszüge "
+                "im Tab **📥 Import** hoch (CSV/CAMT-Export der Consorsbank). "
+                "Zum reinen Ausprobieren kannst du in den **⚙️ Einstellungen** "
+                "optional Demo-Daten laden.")
         return
 
     s = analytics.summary(df)
@@ -384,13 +375,21 @@ def tab_settings(df: pd.DataFrame) -> None:
 
     with c2:
         st.markdown("**Demo-Daten**")
-        st.caption("Lädt Beispiel-Umsätze ab Januar 2026.")
+        n_demo = storage.count_demo()
+        st.caption(f"Beispiel-Umsätze zum Ausprobieren. Aktuell {n_demo} vorhanden.")
         if st.button("➕ Demo-Daten laden"):
             txs = sampledata.generate(up_to=date.today())
             new, skip = storage.add_transactions(txs)
             storage.set_recurring_bulk(_recurring_pairs())
             refresh()
             st.success(f"{new} Demo-Umsätze geladen ({skip} bereits vorhanden).")
+            st.rerun()
+        if st.button("🧹 Demo-Daten entfernen", disabled=n_demo == 0):
+            removed = storage.clear_demo()
+            storage.set_recurring_bulk(_recurring_pairs())
+            refresh()
+            st.success(f"{removed} Demo-Umsätze entfernt. Echte Umsätze bleiben erhalten.")
+            st.rerun()
 
     with c3:
         st.markdown("**Zurücksetzen**")
@@ -417,7 +416,6 @@ def tab_settings(df: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    ensure_seed()
     st.title("💶 Finance-Tool")
     st.caption("Einnahmen & Ausgaben tracken, kategorisieren, visualisieren – "
                "täglich, monatlich, jährlich.")
