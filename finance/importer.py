@@ -147,18 +147,15 @@ def _detect_columns(header: list[str]) -> dict[str, int]:
     return mapping
 
 
-def _sniff_dialect(sample: str) -> csv.Dialect:
-    try:
-        return csv.Sniffer().sniff(sample, delimiters=";,\t|")
-    except csv.Error:
-        class _D(csv.Dialect):
-            delimiter = ";"
-            quotechar = '"'
-            doublequote = True
-            skipinitialspace = True
-            lineterminator = "\r\n"
-            quoting = csv.QUOTE_MINIMAL
-        return _D()
+def _pick_delimiter(header_line: str) -> str:
+    """Bestimmt das Spaltentrennzeichen anhand der Kopfzeile.
+
+    Die Kopfzeile enthält keine Dezimalkommas, daher ist Zählen zuverlässiger
+    als csv.Sniffer (der bei deutschen Beträgen ',' fälschlich als Trenner wählt).
+    """
+    counts = {c: header_line.count(c) for c in (";", "\t", "|", ",")}
+    best = max(counts, key=counts.get)
+    return best if counts[best] > 0 else ";"
 
 
 def _decode(data: bytes) -> str:
@@ -187,9 +184,13 @@ def parse_csv(data: bytes, source: str = "csv") -> list[Transaction]:
             break
 
     body = "\n".join(lines[header_idx:])
-    dialect = _sniff_dialect("\n".join(lines[header_idx:header_idx + 5]))
+    # Trennzeichen anhand der Kopfzeile bestimmen (NICHT raten): deutsche
+    # Bank-CSVs nutzen ';' als Trenner und ',' als Dezimalzeichen – der
+    # csv.Sniffer verwechselt das häufig. Zählen ist zuverlässiger.
+    delimiter = _pick_delimiter(lines[header_idx] if header_idx < len(lines) else "")
 
-    reader = csv.reader(io.StringIO(body), dialect)
+    reader = csv.reader(io.StringIO(body), delimiter=delimiter, quotechar='"',
+                        skipinitialspace=True)
     rows = list(reader)
     if not rows:
         return []
@@ -198,9 +199,9 @@ def parse_csv(data: bytes, source: str = "csv") -> list[Transaction]:
     cols = _detect_columns(header)
     if "date" not in cols or "amount" not in cols:
         raise ValueError(
-            "CSV konnte nicht erkannt werden – benötige mindestens eine "
-            "Datums- und eine Betragsspalte. Erkannte Spalten: "
-            + ", ".join(header)
+            f"CSV konnte nicht erkannt werden (Trennzeichen '{delimiter}'). "
+            "Benötige mindestens eine Datums- und eine Betragsspalte. "
+            "Erkannte Spalten: " + " | ".join(header)
         )
 
     def get(row: list[str], field: str) -> str:

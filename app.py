@@ -274,24 +274,54 @@ def tab_import(df: pd.DataFrame) -> None:
         "überlappende Zeiträume laden."
     )
 
+    # Ergebnis eines vorherigen Imports anzeigen (überlebt den Rerun).
+    res = st.session_state.pop("import_result", None)
+    if res:
+        if res["new"] or res["skip"]:
+            st.success(f"✅ {res['new']} neue Umsätze importiert, "
+                       f"{res['skip']} Duplikate übersprungen.")
+        if res["read"] == 0 and not res["errors"]:
+            st.warning("⚠️ Die Datei wurde gelesen, aber es konnten **0 Umsätze** "
+                       "erkannt werden. Wahrscheinlich weicht das Spaltenformat ab. "
+                       "Sieh dir die Diagnose unten an.")
+        elif res["new"] == 0 and res["skip"] and not res["errors"]:
+            st.info("Alle Umsätze aus dieser Datei waren bereits vorhanden.")
+        for e in res["errors"]:
+            st.error(f"❌ {e}")
+        if res.get("diag"):
+            with st.expander("🔍 Import-Diagnose (bei Problemen hilfreich)"):
+                st.code(res["diag"])
+
     files = st.file_uploader("CSV- oder CAMT/XML-Dateien", type=["csv", "xml"],
                              accept_multiple_files=True)
     if files and st.button("Importieren", type="primary"):
-        total_new = total_skip = 0
-        errors = []
+        total_new = total_skip = total_read = 0
+        errors, diag = [], []
         for f in files:
             try:
-                txs = parse_file(f.name, f.read())
+                data = f.read()
+                txs = parse_file(f.name, data)
                 new, skip = storage.add_transactions(txs)
                 total_new += new
                 total_skip += skip
+                total_read += len(txs)
+                diag.append(f"{f.name}: {len(txs)} Zeilen gelesen "
+                            f"→ {new} neu, {skip} Duplikate")
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{f.name}: {exc}")
-        storage.set_recurring_bulk(_recurring_pairs())
+                diag.append(f"{f.name}: FEHLER – {exc}")
+
+        # Fixkosten-Erkennung darf den Import nicht scheitern lassen.
+        try:
+            storage.set_recurring_bulk(_recurring_pairs())
+        except Exception as exc:  # noqa: BLE001
+            diag.append(f"Fixkosten-Erkennung übersprungen: {exc}")
+
         refresh()
-        st.success(f"{total_new} neue Umsätze importiert, {total_skip} Duplikate übersprungen.")
-        for e in errors:
-            st.error(e)
+        st.session_state["import_result"] = {
+            "new": total_new, "skip": total_skip, "read": total_read,
+            "errors": errors, "diag": "\n".join(diag),
+        }
         st.rerun()
 
     st.divider()
