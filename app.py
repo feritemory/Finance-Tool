@@ -38,7 +38,10 @@ def _recurring_pairs() -> list[tuple[int, bool]]:
 
 
 @st.cache_data(show_spinner=False)
-def get_data(_version: int) -> pd.DataFrame:
+def get_data(version: int) -> pd.DataFrame:
+    # 'version' MUSS ohne führenden Unterstrich heißen – sonst schließt
+    # st.cache_data das Argument vom Cache-Schlüssel aus und der Cache wird
+    # nach einem Import nie invalidiert (andere Tabs blieben dann leer).
     return storage.load_dataframe()
 
 
