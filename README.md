@@ -99,7 +99,14 @@ Danach den Rechner neu starten.
 7. Sport
 8. Gehalt *(Einnahme)*
 9. Bafög *(Einnahme)*
-10. Überweisung an Sparkonten (Trade Republic & Revolut) *(Sparen)*
+10. Sonstige Einnahmen *(Einnahme – Erstattungen, Überweisungen, PayPal …)*
+11. Überweisung an Sparkonten (Trade Republic & Revolut) *(Sparen)*
+
+Einnahme vs. Ausgabe richtet sich nach dem **Vorzeichen**: Ein Geldeingang, der
+keiner Einnahmen-Regel entspricht (z. B. Steuererstattung, Rückzahlung von
+Freunden), wird als **Sonstige Einnahmen** geführt – nicht als Ausgabe.
+Gehälter werden am Buchungstag (bei Zahlung am letzten Werktag automatisch dem
+richtigen Monat) zugeordnet.
 
 Zusätzlich gibt es die Auffang-Kategorie **Sonstiges**. Die Zuordnung erfolgt
 automatisch über Stichwort-Regeln in [`config/rules.yaml`](config/rules.yaml) –

@@ -21,8 +21,10 @@ class Category:
     fixkosten: bool = False   # typischerweise wiederkehrende Fixkosten?
 
 
-# Kategorie "Sonstiges" fängt alles ab, was keine Regel trifft.
+# Kategorie "Sonstiges" fängt unklare AUSGABEN ab; "Sonstige Einnahmen"
+# entsprechend unklare EINGÄNGE (Erstattungen, Überweisungen, PayPal ...).
 UNCATEGORIZED = "Sonstiges"
+INCOME_UNCATEGORIZED = "Sonstige Einnahmen"
 
 CATEGORIES: list[Category] = [
     Category("Lebensmittel",                 "ausgabe", "#4E79A7"),
@@ -34,6 +36,7 @@ CATEGORIES: list[Category] = [
     Category("Sport",                        "ausgabe", "#B07AA1", fixkosten=True),
     Category("Gehalt",                       "einnahme", "#2E7D32"),
     Category("Bafög",                        "einnahme", "#9C755F"),
+    Category(INCOME_UNCATEGORIZED,           "einnahme", "#7FB069"),
     Category("Überweisung an Sparkonten",    "sparen",   "#4C72B0", fixkosten=True),
     Category(UNCATEGORIZED,                  "ausgabe", "#BAB0AC"),
 ]

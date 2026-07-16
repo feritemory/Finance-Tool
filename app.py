@@ -144,10 +144,15 @@ def tab_overview(df: pd.DataFrame) -> None:
                               legend=dict(orientation="h", y=-0.1))
             st.plotly_chart(fig, use_container_width=True)
 
-    # Gestapelte Kategorien über die Zeit
-    st.subheader("Ausgaben je Kategorie im Zeitverlauf")
-    piv = analytics.category_over_time(df, freq, "ausgabe")
-    if not piv.empty:
+    # Gestapelte Kategorien über die Zeit – umschaltbar Ausgaben/Einnahmen
+    st.subheader("Kategorien im Zeitverlauf")
+    art = st.radio("Anzeigen", ["Ausgaben", "Einnahmen"], index=0, horizontal=True,
+                   label_visibility="collapsed")
+    typ = "ausgabe" if art == "Ausgaben" else "einnahme"
+    piv = analytics.category_over_time(df, freq, typ)
+    if piv.empty:
+        st.caption("Keine Daten im Zeitraum.")
+    else:
         long = piv.reset_index().melt(id_vars="periode", var_name="Kategorie",
                                       value_name="Betrag")
         fig = px.bar(long, x="periode", y="Betrag", color="Kategorie",

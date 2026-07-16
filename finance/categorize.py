@@ -7,7 +7,8 @@ from functools import lru_cache
 
 import yaml
 
-from .categories import CATEGORY_NAMES, UNCATEGORIZED, is_income
+from .categories import (CATEGORY_NAMES, INCOME_UNCATEGORIZED, UNCATEGORIZED,
+                         is_expense, is_income)
 from .merchants import merchant_key
 
 RULES_PATH = os.path.join(
@@ -68,8 +69,11 @@ def categorize(counterparty: str, description: str, booking_text: str,
 
     rules = load_rules()
     for cat, keywords in rules.items():
-        # Einnahmen nur bei Geldeingang, Ausgaben nur bei Geldausgang zulassen.
+        # Einnahmen-Kategorien nur bei Geldeingang, Ausgaben-Kategorien nur bei
+        # Geldausgang zulassen (Sparen-Überträge gelten in beide Richtungen).
         if is_income(cat) and amount <= 0:
+            continue
+        if is_expense(cat) and amount > 0:
             continue
         for kw in keywords:
             if not kw:
@@ -87,4 +91,7 @@ def categorize(counterparty: str, description: str, booking_text: str,
         if cat and conf >= ml_threshold:
             return cat
 
+    # Fallback: Eingänge -> "Sonstige Einnahmen", Ausgaben -> "Sonstiges".
+    if amount > 0:
+        return INCOME_UNCATEGORIZED
     return UNCATEGORIZED
