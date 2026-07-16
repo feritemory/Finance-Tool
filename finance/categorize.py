@@ -8,6 +8,7 @@ from functools import lru_cache
 import yaml
 
 from .categories import CATEGORY_NAMES, UNCATEGORIZED, is_income
+from .merchants import merchant_key
 
 RULES_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -38,21 +39,26 @@ def load_rules() -> dict[str, list[str]]:
 
 
 def categorize(counterparty: str, description: str, booking_text: str,
-               amount: float, iban: str = "", bic: str = "") -> str:
+               amount: float, iban: str = "", bic: str = "",
+               learned: dict[str, str] | None = None) -> str:
     """Ordnet einem Umsatz eine Kategorie zu.
 
-    Sucht in Empfänger, Verwendungszweck, Buchungstext sowie IBAN/BIC nach
-    Stichwörtern (die BIC identifiziert z. B. Trade Republic / Revolut, wenn
-    im Text nur "Dauerauftrag" steht).
+    Reihenfolge:
+      1. Gelernte Zuordnungen aus Nutzer-Korrekturen (``learned``) – höchste
+         Priorität, damit das Tool wie Finanzguru mit der Zeit dazulernt.
+      2. Stichwort-Regeln aus config/rules.yaml (inkl. IBAN/BIC, damit z. B.
+         Trade Republic / Revolut auch als reiner "Dauerauftrag" erkannt wird).
 
-    Zusätzlich wird eine leerzeichenfreie Variante geprüft: Manche Banken
-    (u. a. Consorsbank) zerreißen Wörter durch Zeilenumbrüche im
-    Verwendungszweck ("Urban Sp orts", "DB Vertr ieb") – ohne Leerzeichen
-    greifen die Stichwörter dann trotzdem.
-
-    Einnahmen-Kategorien werden nur bei positivem Betrag gewählt, damit z. B.
-    eine Rücklastschrift von "Gehalt" nicht als Einnahme zählt.
+    Für zerrissene Wörter (Consorsbank: "Urban Sp orts") wird zusätzlich eine
+    leerzeichenfreie Variante geprüft. Einnahmen-Kategorien greifen nur bei
+    positivem Betrag.
     """
+    # 1) Gelernte Händler-Zuordnung
+    if learned:
+        key = merchant_key(counterparty, description, booking_text, bic)
+        if key and key in learned:
+            return learned[key]
+
     parts = (counterparty, description, booking_text, iban, bic)
     haystack = " ".join(p.lower() for p in parts if p)
     haystack_nospace = haystack.replace(" ", "")

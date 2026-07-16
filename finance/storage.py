@@ -11,6 +11,7 @@ import pandas as pd
 
 from .categorize import categorize
 from .importer import Transaction
+from .merchants import merchant_key
 
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
@@ -39,6 +40,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_tx_category ON transactions(category);
+
+-- Gelernte Zuordnungen aus Nutzer-Korrekturen (Händler-Schlüssel -> Kategorie).
+CREATE TABLE IF NOT EXISTS merchant_rules (
+    merchant_key TEXT PRIMARY KEY,
+    category     TEXT NOT NULL,
+    updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -64,14 +72,28 @@ def init_db() -> None:
                 conn.execute(f"ALTER TABLE transactions ADD COLUMN {ddl}")
 
 
-def add_transactions(transactions: list[Transaction]) -> tuple[int, int]:
-    """Fügt Umsätze hinzu, überspringt Duplikate. Rückgabe: (neu, übersprungen)."""
+def get_learned() -> dict[str, str]:
+    """Gelernte Händler->Kategorie-Zuordnungen aus Nutzer-Korrekturen."""
     init_db()
+    with _connect() as conn:
+        return {r["merchant_key"]: r["category"]
+                for r in conn.execute("SELECT merchant_key, category FROM merchant_rules")}
+
+
+def add_transactions(transactions: list[Transaction]) -> tuple[int, int]:
+    """Fügt Umsätze hinzu, überspringt Duplikate. Rückgabe: (neu, übersprungen).
+
+    Selbstheilend: Ist ein Umsatz bereits vorhanden, aber BIC/IBAN fehlten
+    (z. B. aus einem älteren Import), werden sie nachgetragen – so werden
+    Trade-Republic-/Revolut-Überträge auch nachträglich korrekt erkannt.
+    """
+    init_db()
+    learned = get_learned()
     inserted = skipped = 0
     with _connect() as conn:
         for t in transactions:
             category = categorize(t.counterparty, t.description, t.booking_text,
-                                  t.amount, t.iban, t.bic)
+                                  t.amount, t.iban, t.bic, learned)
             try:
                 conn.execute(
                     """INSERT INTO transactions
@@ -88,7 +110,30 @@ def add_transactions(transactions: list[Transaction]) -> tuple[int, int]:
                 inserted += 1
             except sqlite3.IntegrityError:
                 skipped += 1
+                # BIC/IBAN in bestehender Zeile nachtragen, falls sie fehlten.
+                if t.bic or t.iban:
+                    conn.execute(
+                        """UPDATE transactions
+                           SET bic = COALESCE(NULLIF(bic, ''), ?),
+                               iban = COALESCE(NULLIF(iban, ''), ?)
+                           WHERE dedup_hash = ?""",
+                        (t.bic, t.iban, t.dedup_hash()),
+                    )
     return inserted, skipped
+
+
+def learn_merchant(merchant: str, category: str) -> None:
+    """Speichert eine Nutzer-Korrektur als Regel für künftige Umsätze."""
+    if not merchant:
+        return
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO merchant_rules (merchant_key, category)
+               VALUES (?, ?)
+               ON CONFLICT(merchant_key) DO UPDATE SET
+                   category=excluded.category, updated_at=CURRENT_TIMESTAMP""",
+            (merchant, category),
+        )
 
 
 def load_dataframe() -> pd.DataFrame:
@@ -116,12 +161,48 @@ def _empty_frame() -> pd.DataFrame:
     return pd.DataFrame(columns=cols)
 
 
-def update_category(tx_id: int, category: str, manual: bool = True) -> None:
+def update_category(tx_id: int, category: str, manual: bool = True,
+                    learn: bool = True) -> int:
+    """Setzt die Kategorie eines Umsatzes.
+
+    Bei einer manuellen Korrektur wird die Zuordnung gelernt und – sofern
+    ``learn`` – auf alle weiteren (nicht manuell gesetzten) Umsätze desselben
+    Händlers übertragen. Rückgabe: Anzahl zusätzlich angepasster Umsätze.
+    """
+    also = 0
     with _connect() as conn:
         conn.execute(
             "UPDATE transactions SET category=?, category_manual=? WHERE id=?",
             (category, 1 if manual else 0, tx_id),
         )
+        if manual and learn:
+            row = conn.execute(
+                "SELECT counterparty, description, booking_text, bic "
+                "FROM transactions WHERE id=?", (tx_id,)
+            ).fetchone()
+            if row:
+                key = merchant_key(row["counterparty"], row["description"],
+                                   row["booking_text"], row["bic"] or "")
+                if key:
+                    conn.execute(
+                        """INSERT INTO merchant_rules (merchant_key, category)
+                           VALUES (?, ?)
+                           ON CONFLICT(merchant_key) DO UPDATE SET
+                               category=excluded.category, updated_at=CURRENT_TIMESTAMP""",
+                        (key, category),
+                    )
+                    # Gleiche Händler-Buchungen (nicht manuell) mitziehen.
+                    others = conn.execute(
+                        "SELECT id, counterparty, description, booking_text, bic "
+                        "FROM transactions WHERE category_manual=0 AND id!=?", (tx_id,)
+                    ).fetchall()
+                    for o in others:
+                        if merchant_key(o["counterparty"], o["description"],
+                                        o["booking_text"], o["bic"] or "") == key:
+                            conn.execute("UPDATE transactions SET category=? WHERE id=?",
+                                         (category, o["id"]))
+                            also += 1
+    return also
 
 
 def set_recurring(tx_id: int, recurring: bool, manual: bool = True) -> None:
@@ -144,7 +225,11 @@ def set_recurring_bulk(pairs: list[tuple[int, bool]]) -> None:
 
 
 def recategorize_all() -> int:
-    """Kategorisiert alle nicht manuell gesetzten Umsätze neu (nach Regeländerung)."""
+    """Kategorisiert alle nicht manuell gesetzten Umsätze neu (nach Regeländerung).
+
+    Berücksichtigt gelernte Zuordnungen und aktuelle Regeln.
+    """
+    learned = get_learned()
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, counterparty, description, booking_text, amount, iban, bic "
@@ -153,7 +238,7 @@ def recategorize_all() -> int:
         n = 0
         for r in rows:
             cat = categorize(r["counterparty"], r["description"], r["booking_text"],
-                             r["amount"], r["iban"], r["bic"])
+                             r["amount"], r["iban"], r["bic"], learned)
             conn.execute("UPDATE transactions SET category=? WHERE id=?", (cat, r["id"]))
             n += 1
     return n
@@ -184,3 +269,14 @@ def clear_demo() -> int:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM transactions WHERE source='sample'")
         return cur.rowcount
+
+
+def count_learned() -> int:
+    init_db()
+    with _connect() as conn:
+        return conn.execute("SELECT COUNT(*) FROM merchant_rules").fetchone()[0]
+
+
+def clear_learned() -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM merchant_rules")

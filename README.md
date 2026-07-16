@@ -107,6 +107,19 @@ diese Datei kannst du beliebig erweitern. Nach einer Änderung in den
 **Einstellungen** auf *„Regeln neu anwenden"* klicken (manuell gesetzte
 Kategorien bleiben erhalten).
 
+#### Selbstlernende Kategorisierung
+Wie bei Apps à la Finanzguru **lernt das Tool aus deinen Korrekturen**: Sobald du
+im Tab *📋 Transaktionen* die Kategorie einer Buchung änderst, merkt sich das
+Tool den Händler und ordnet **alle weiteren und künftigen** Buchungen desselben
+Händlers automatisch genauso ein. Die Erkennung berücksichtigt dabei auch die
+BIC (damit z. B. Trade-Republic-/Revolut-Daueraufträge ohne Namen korrekt als
+*Überweisung an Sparkonten* erkannt werden) und setzt von der Bank durch
+Zeilenumbruch zerrissene Händlernamen wieder zusammen. Gelernte Regeln lassen
+sich in den **Einstellungen** einsehen und zurücksetzen.
+
+Reihenfolge der Zuordnung: **1.** gelernte Korrekturen → **2.** Stichwort-Regeln
+→ sonst *Sonstiges*.
+
 ---
 
 ## Umsätze aus der Consorsbank importieren

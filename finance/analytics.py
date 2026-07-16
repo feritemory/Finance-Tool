@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
-
 import pandas as pd
 
 from .categories import is_saving
+from .merchants import clean_name, merchant_key
 
 
 # ---------------------------------------------------------------------------
@@ -112,90 +111,91 @@ def category_over_time(df: pd.DataFrame, freq: str = "M",
 # Fixkosten-Erkennung
 # ---------------------------------------------------------------------------
 
-def _normalize_merchant(name: str, description: str, category: str) -> str:
-    base = (name or "").lower().strip()
-    if not base:
-        # Fallback: erste sinnvollen Wörter des Verwendungszwecks
-        base = (description or "").lower().strip()
-    base = re.sub(r"[0-9]{4,}", "", base)          # lange Ziffernfolgen entfernen
-    base = re.sub(r"\b(datum|nr|ref|beleg|mandat|iban)\b.*", "", base)
-    base = re.sub(r"[^a-zäöüß ]", " ", base)
-    base = re.sub(r"\s+", " ", base).strip()
-    tokens = base.split()
-    key = " ".join(tokens[:3]) if tokens else category.lower()
-    return key or category.lower()
-
-
 def detect_recurring(df: pd.DataFrame, min_months: int = 3,
-                     max_cv: float = 0.12, max_per_month: float = 1.4) -> pd.DataFrame:
-    """Erkennt echte Fixkosten (wiederkehrende Zahlungen).
+                     max_per_month: float = 1.6) -> pd.DataFrame:
+    """Erkennt wiederkehrende Zahlungen (Fixkosten & feste Sparbeträge).
 
-    Eine Zahlung gilt als Fixkosten, wenn ein Empfänger
-      * in mindestens ``min_months`` verschiedenen Monaten auftaucht,
-      * durchschnittlich höchstens ~1× pro Monat gebucht wird
-        (``max_per_month``) – schließt Lebensmittel/Essen aus, die mehrfach
-        pro Monat anfallen,
-      * mit weitgehend konstantem Betrag (Variationskoeffizient ≤ ``max_cv``) –
-        schließt schwankende Ausgaben wie Shopping aus.
+    Gruppiert wird nach Händler/Konto UND ungefährem Betrag: eine Gruppe gilt
+    als wiederkehrend, wenn derselbe Empfänger mit (nahezu) gleichem Betrag in
+    mindestens ``min_months`` verschiedenen Monaten und höchstens ~1×/Monat
+    auftaucht. Dadurch werden auch feste Überträge erkannt, deren Text nur
+    "Dauerauftrag" lautet (z. B. Revolut −400, Trade Republic −800, Miete −637),
+    während schwankende Ausgaben (Shopping, Essen) ausgeschlossen bleiben.
 
-    Rückgabe je erkannter Fixkosten-Gruppe:
-        merchant, category, monate, median_betrag, tx_ids
+    Rückgabe je Gruppe: merchant, category, monate, median_betrag, tx_ids,
+                        ist_sparen
     """
-    empty = pd.DataFrame(columns=["merchant", "category", "monate",
-                                  "median_betrag", "tx_ids"])
+    cols = ["merchant", "category", "monate", "median_betrag", "tx_ids", "ist_sparen"]
+    empty = pd.DataFrame(columns=cols)
     if df.empty:
         return empty
 
-    # nur Ausgaben & Sparen betrachten (Einnahmen sind keine Fixkosten)
-    sub = df[df["amount"] < 0].copy()
+    sub = df[df["amount"] < 0].copy()          # nur Abflüsse
     if sub.empty:
         return empty
 
-    sub["merchant"] = sub.apply(
-        lambda r: _normalize_merchant(r["counterparty"], r["description"], r["category"]),
+    sub["key"] = sub.apply(
+        lambda r: merchant_key(r["counterparty"], r["description"],
+                               r["booking_text"], r.get("bic") or ""),
         axis=1,
     )
     sub["betrag"] = sub["amount"].abs()
+    sub["amt_round"] = sub["betrag"].round(0)     # auf ganze Euro bündeln
     sub["ym"] = sub["date"].dt.to_period("M").astype(str)
+    sub = sub[sub["key"] != ""]
+
+    # Häufig frequentierte Händler (z. B. Lidl, Restaurants) sind variable
+    # Ausgaben, keine Fixkosten – auch wenn einzelne Beträge zufällig
+    # wiederkehren. Eigene Konten (BIC) sind ausgenommen, da dort neben festen
+    # Sparraten auch andere Überträge laufen.
+    keyfreq = sub.groupby("key").agg(n=("id", "size"), m=("ym", "nunique"))
+    frequent = {
+        k for k, row in keyfreq.iterrows()
+        if not k.startswith("bic:") and row["n"] / max(row["m"], 1) > 1.5
+    }
 
     results = []
-    for merchant, grp in sub.groupby("merchant"):
-        if not merchant:
+    for (key, _amt), grp in sub.groupby(["key", "amt_round"]):
+        if key in frequent:
             continue
         months = grp["ym"].nunique()
         if months < min_months:
             continue
-        # ~1× pro Monat? (variable, häufige Ausgaben ausschließen)
-        if len(grp) / months > max_per_month:
+        if len(grp) > months * max_per_month:      # ~1×/Monat
             continue
-        median = grp["betrag"].median()
-        mean = grp["betrag"].mean()
-        if median <= 0 or mean <= 0:
-            continue
-        # Betrags-Konstanz: Variationskoeffizient (Streuung relativ zum Mittel)
-        cv = grp["betrag"].std(ddof=0) / mean
-        if cv > max_cv:
-            continue
+        first = grp.iloc[0]
+        name = clean_name(first["counterparty"], first["description"],
+                          first.get("bic") or "")
+        cat = grp["category"].mode().iat[0]
         results.append({
-            "merchant": merchant,
-            "category": grp["category"].mode().iat[0],
+            "merchant": name or key,
+            "category": cat,
             "monate": int(months),
-            "median_betrag": float(median),
+            "median_betrag": float(grp["betrag"].median()),
             "tx_ids": grp["id"].tolist(),
+            "ist_sparen": bool(is_saving(cat)),
         })
 
-    out = pd.DataFrame(results)
+    out = pd.DataFrame(results, columns=cols)
     if out.empty:
         return empty
     return out.sort_values("median_betrag", ascending=False).reset_index(drop=True)
 
 
 def monthly_fixed_costs(df: pd.DataFrame) -> float:
-    """Geschätzte monatliche Fixkosten = Summe der Mediane erkannter Fixkosten."""
+    """Monatliche Fixkosten = Summe wiederkehrender Zahlungen OHNE Sparen."""
     rec = detect_recurring(df)
     if rec.empty:
         return 0.0
-    return float(rec["median_betrag"].sum())
+    return float(rec.loc[~rec["ist_sparen"], "median_betrag"].sum())
+
+
+def monthly_savings(df: pd.DataFrame) -> float:
+    """Monatlich fest gesparter Betrag (wiederkehrende Sparkonten-Überträge)."""
+    rec = detect_recurring(df)
+    if rec.empty:
+        return 0.0
+    return float(rec.loc[rec["ist_sparen"], "median_betrag"].sum())
 
 
 def available_years(df: pd.DataFrame) -> list[int]:

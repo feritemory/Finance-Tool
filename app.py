@@ -174,32 +174,45 @@ def tab_fixed(df: pd.DataFrame) -> None:
                 "Monaten mit ähnlichem Betrag auftaucht.")
         return
 
-    total = rec["median_betrag"].sum()
-    st.metric("Geschätzte Fixkosten pro Monat", fmt(total))
+    fixkosten = rec[~rec["ist_sparen"]]
+    sparen = rec[rec["ist_sparen"]]
 
-    view = rec.rename(columns={
-        "merchant": "Empfänger (erkannt)",
-        "category": "Kategorie",
-        "monate": "Monate",
-        "median_betrag": "Betrag/Monat (Median)",
-    })[["Empfänger (erkannt)", "Kategorie", "Monate", "Betrag/Monat (Median)"]]
-    view["Betrag/Monat (Median)"] = view["Betrag/Monat (Median)"].map(fmt)
+    c1, c2 = st.columns(2)
+    c1.metric("Fixkosten pro Monat", fmt(fixkosten["median_betrag"].sum()))
+    c2.metric("Festes Sparen pro Monat", fmt(sparen["median_betrag"].sum()))
 
-    c1, c2 = st.columns([3, 2])
-    with c1:
-        st.dataframe(view, use_container_width=True, hide_index=True)
-    with c2:
-        fig = px.bar(rec, x="median_betrag", y="merchant", orientation="h",
+    def _table(r: pd.DataFrame):
+        view = r.rename(columns={
+            "merchant": "Empfänger (erkannt)",
+            "category": "Kategorie",
+            "monate": "Monate",
+            "median_betrag": "Betrag/Monat",
+        })[["Empfänger (erkannt)", "Kategorie", "Monate", "Betrag/Monat"]].copy()
+        view["Betrag/Monat"] = view["Betrag/Monat"].map(fmt)
+        return view
+
+    st.markdown("#### 🔁 Fixkosten")
+    if fixkosten.empty:
+        st.caption("Keine wiederkehrenden Fixkosten erkannt.")
+    else:
+        left, right = st.columns([3, 2])
+        left.dataframe(_table(fixkosten), use_container_width=True, hide_index=True)
+        fig = px.bar(fixkosten, x="median_betrag", y="merchant", orientation="h",
                      color="category", color_discrete_map=COLOR_MAP,
                      labels={"median_betrag": "€/Monat", "merchant": ""})
-        fig.update_layout(height=max(300, 40 * len(rec)), showlegend=False,
+        fig.update_layout(height=max(280, 38 * len(fixkosten)), showlegend=False,
                           margin=dict(t=10, b=10, l=10, r=10),
                           yaxis=dict(autorange="reversed"))
-        st.plotly_chart(fig, use_container_width=True)
+        right.plotly_chart(fig, use_container_width=True)
 
-    st.caption("Erkennung heuristisch anhand wiederkehrender Empfänger & Beträge. "
-               "Die Toleranz/Monatsschwelle kann in `finance/analytics.py` angepasst "
-               "werden.")
+    if not sparen.empty:
+        st.markdown("#### 💰 Feste Sparbeträge (Überträge auf Sparkonten)")
+        st.dataframe(_table(sparen), use_container_width=True, hide_index=True)
+
+    st.caption("Heuristische Erkennung anhand wiederkehrender Empfänger/Konten und "
+               "konstanter Beträge. Häufig frequentierte Händler (z. B. Supermärkte) "
+               "werden bewusst ausgeschlossen. Schwellen anpassbar in "
+               "`finance/analytics.py` → `detect_recurring`.")
 
 
 # ---------------------------------------------------------------------------
@@ -245,20 +258,25 @@ def tab_transactions(df: pd.DataFrame) -> None:
     if st.button("💾 Änderungen speichern", type="primary"):
         orig = show.set_index("id")
         new = edited.set_index("id")
-        changes = 0
+        changes = also = 0
         for tx_id in new.index:
             if new.loc[tx_id, "Kategorie"] != orig.loc[tx_id, "Kategorie"]:
-                storage.update_category(int(tx_id), new.loc[tx_id, "Kategorie"], manual=True)
+                also += storage.update_category(
+                    int(tx_id), new.loc[tx_id, "Kategorie"], manual=True)
                 changes += 1
             if bool(new.loc[tx_id, "Fixkosten"]) != bool(orig.loc[tx_id, "Fixkosten"]):
                 storage.set_recurring(int(tx_id), bool(new.loc[tx_id, "Fixkosten"]), manual=True)
                 changes += 1
         refresh()
-        st.success(f"{changes} Änderung(en) gespeichert.")
+        msg = f"{changes} Änderung(en) gespeichert."
+        if also:
+            msg += f" {also} weitere Buchung(en) desselben Händlers automatisch angepasst."
+        st.success(msg)
         st.rerun()
 
-    st.caption(f"{len(show)} Transaktionen angezeigt. Manuell geänderte Kategorien "
-               "bleiben bei einer Neu-Kategorisierung erhalten.")
+    st.caption(f"{len(show)} Transaktionen angezeigt. Wenn du eine Kategorie änderst, "
+               "**merkt sich das Tool den Händler** und ordnet künftige (und weitere "
+               "vorhandene) Buchungen automatisch genauso ein.")
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +331,13 @@ def tab_import(df: pd.DataFrame) -> None:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{f.name}: {exc}")
                 diag.append(f"{f.name}: FEHLER – {exc}")
+
+        # Bestehende Umsätze (mit ggf. nachgetragener BIC) neu kategorisieren,
+        # damit z. B. Trade-Republic-/Revolut-Überträge nachträglich stimmen.
+        try:
+            storage.recategorize_all()
+        except Exception as exc:  # noqa: BLE001
+            diag.append(f"Neu-Kategorisierung übersprungen: {exc}")
 
         # Fixkosten-Erkennung darf den Import nicht scheitern lassen.
         try:
@@ -432,6 +457,18 @@ def tab_settings(df: pd.DataFrame) -> None:
             storage.clear_all()
             refresh()
             st.success("Alle Daten gelöscht.")
+            st.rerun()
+
+    st.divider()
+    n_learned = storage.count_learned()
+    st.markdown(f"**Gelernte Händler-Regeln:** {n_learned}")
+    st.caption("Jede manuelle Kategorie-Korrektur im Tab *Transaktionen* wird hier "
+               "als Regel gespeichert und künftig automatisch angewendet.")
+    if n_learned and st.checkbox("Gelernte Regeln zurücksetzen"):
+        if st.button("🧠 Gelernte Regeln löschen"):
+            storage.clear_learned()
+            refresh()
+            st.success("Gelernte Regeln gelöscht.")
             st.rerun()
 
     st.divider()
