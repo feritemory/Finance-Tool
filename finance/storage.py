@@ -9,6 +9,8 @@ from datetime import date
 
 import pandas as pd
 
+from . import ml
+from .categories import CATEGORIES, UNCATEGORIZED
 from .categorize import categorize
 from .importer import Transaction
 from .merchants import merchant_key
@@ -89,11 +91,12 @@ def add_transactions(transactions: list[Transaction]) -> tuple[int, int]:
     """
     init_db()
     learned = get_learned()
+    model = ml.load_model()
     inserted = skipped = 0
     with _connect() as conn:
         for t in transactions:
             category = categorize(t.counterparty, t.description, t.booking_text,
-                                  t.amount, t.iban, t.bic, learned)
+                                  t.amount, t.iban, t.bic, learned, model)
             try:
                 conn.execute(
                     """INSERT INTO transactions
@@ -224,12 +227,14 @@ def set_recurring_bulk(pairs: list[tuple[int, bool]]) -> None:
             )
 
 
-def recategorize_all() -> int:
+def recategorize_all(ml_threshold: float = ml.DEFAULT_THRESHOLD) -> int:
     """Kategorisiert alle nicht manuell gesetzten Umsätze neu (nach Regeländerung).
 
-    Berücksichtigt gelernte Zuordnungen und aktuelle Regeln.
+    Berücksichtigt gelernte Zuordnungen, aktuelle Regeln und – falls vorhanden –
+    das lokale ML-Modell.
     """
     learned = get_learned()
+    model = ml.load_model()
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, counterparty, description, booking_text, amount, iban, bic "
@@ -238,10 +243,41 @@ def recategorize_all() -> int:
         n = 0
         for r in rows:
             cat = categorize(r["counterparty"], r["description"], r["booking_text"],
-                             r["amount"], r["iban"], r["bic"], learned)
+                             r["amount"], r["iban"], r["bic"], learned, model,
+                             ml_threshold)
             conn.execute("UPDATE transactions SET category=? WHERE id=?", (cat, r["id"]))
             n += 1
     return n
+
+
+# Ausgaben-Kategorien (ohne Auffang-Kategorie) – nur diese lernt das ML-Modell.
+_EXPENSE_CATS = [c.name for c in CATEGORIES
+                 if c.typ == "ausgabe" and c.name != UNCATEGORIZED]
+
+
+def train_model() -> dict:
+    """Trainiert das lokale ML-Modell aus den bisher kategorisierten Ausgaben.
+
+    Manuell korrigierte Buchungen fließen stärker gewichtet ein. Rückgabe:
+    Metriken (Anzahl, Kategorien, geschätzte Genauigkeit).
+    """
+    init_db()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT counterparty, description, booking_text, category, category_manual "
+            "FROM transactions WHERE amount < 0 AND category IN "
+            "(%s)" % ",".join("?" * len(_EXPENSE_CATS)),
+            _EXPENSE_CATS,
+        ).fetchall()
+
+    samples = []
+    for r in rows:
+        text = ml.make_text(r["counterparty"], r["description"], r["booking_text"])
+        weight = 3.0 if r["category_manual"] else 1.0
+        samples.append((text, r["category"], weight))
+
+    metrics = ml.train(samples)          # kann RuntimeError werfen (zu wenig Daten)
+    return metrics
 
 
 def count() -> int:

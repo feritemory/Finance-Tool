@@ -117,8 +117,22 @@ BIC (damit z. B. Trade-Republic-/Revolut-Daueraufträge ohne Namen korrekt als
 Zeilenumbruch zerrissene Händlernamen wieder zusammen. Gelernte Regeln lassen
 sich in den **Einstellungen** einsehen und zurücksetzen.
 
+#### Lokaler ML-Klassifikator (offline, lernt mit)
+Zusätzlich gibt es ein **lokales Machine-Learning-Modell** (scikit-learn), das
+aus deinen bereits kategorisierten **Ausgaben** lernt und ähnliche neue
+Buchungen automatisch einordnet – z. B. erkennt es „Curry Keule" als *Auswärts*,
+weil es „Curry 36" & Co. gelernt hat. Es läuft **komplett offline**; nichts
+verlässt deinen Rechner.
+
+Bedienung im Tab **⚙️ Einstellungen** → *Selbstlernende Kategorisierung (ML)*:
+- **Modell trainieren & anwenden** – trainiert aus dem aktuellen Datenbestand
+  (manuelle Korrekturen zählen stärker) und ordnet offene *Sonstiges*-Ausgaben zu.
+- **Mindest-Sicherheit** (Schwelle) – nur Vorhersagen oberhalb der Schwelle
+  werden übernommen; unsichere Fälle bleiben bewusst *Sonstiges*.
+- Je mehr du korrigierst und neu trainierst, desto besser wird es.
+
 Reihenfolge der Zuordnung: **1.** gelernte Korrekturen → **2.** Stichwort-Regeln
-→ sonst *Sonstiges*.
+→ **3.** ML-Modell (nur Ausgaben, nur bei hoher Sicherheit) → sonst *Sonstiges*.
 
 ---
 

@@ -9,6 +9,7 @@ env/
 # Lokale Daten (deine echten Umsätze bleiben privat und werden NICHT eingecheckt)
 data/*.db
 data/*.csv
+data/*.pkl
 
 # OS / Editor
 .DS_Store

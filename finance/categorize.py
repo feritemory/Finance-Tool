@@ -40,7 +40,8 @@ def load_rules() -> dict[str, list[str]]:
 
 def categorize(counterparty: str, description: str, booking_text: str,
                amount: float, iban: str = "", bic: str = "",
-               learned: dict[str, str] | None = None) -> str:
+               learned: dict[str, str] | None = None,
+               model=None, ml_threshold: float = 0.60) -> str:
     """Ordnet einem Umsatz eine Kategorie zu.
 
     Reihenfolge:
@@ -48,6 +49,8 @@ def categorize(counterparty: str, description: str, booking_text: str,
          Priorität, damit das Tool wie Finanzguru mit der Zeit dazulernt.
       2. Stichwort-Regeln aus config/rules.yaml (inkl. IBAN/BIC, damit z. B.
          Trade Republic / Revolut auch als reiner "Dauerauftrag" erkannt wird).
+      3. Lokaler ML-Klassifikator (``model``) – nur für Ausgaben, die sonst in
+         "Sonstiges" landen würden, und nur bei ausreichender Sicherheit.
 
     Für zerrissene Wörter (Consorsbank: "Urban Sp orts") wird zusätzlich eine
     leerzeichenfreie Variante geprüft. Einnahmen-Kategorien greifen nur bei
@@ -76,5 +79,12 @@ def categorize(counterparty: str, description: str, booking_text: str,
             kw_nospace = kw.replace(" ", "")
             if len(kw_nospace) >= 5 and kw_nospace in haystack_nospace:
                 return cat
+
+    # 3) ML-Klassifikator als letzte Stufe – nur für Ausgaben (amount < 0).
+    if model is not None and amount < 0:
+        from .ml import make_text, predict
+        cat, conf = predict(model, make_text(counterparty, description, booking_text))
+        if cat and conf >= ml_threshold:
+            return cat
 
     return UNCATEGORIZED

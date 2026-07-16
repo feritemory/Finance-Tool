@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from finance import analytics, storage
+from finance import analytics, ml, storage
 from finance.categories import CATEGORY_NAMES, COLOR_MAP, UNCATEGORIZED
 from finance.importer import parse_file
 from finance import sampledata
@@ -414,6 +414,56 @@ def _psd2_ui() -> None:
 # Tab: Einstellungen
 # ---------------------------------------------------------------------------
 
+def _ml_ui() -> None:
+    st.markdown("### 🤖 Selbstlernende Kategorisierung (ML)")
+    if not ml.sklearn_available():
+        st.warning("Für das lernende Modell fehlt das Paket **scikit-learn**. "
+                   "Installiere es einmalig mit `pip install scikit-learn` "
+                   "(oder starte `run.bat`/`run.sh` neu – es installiert die "
+                   "Abhängigkeiten automatisch).")
+        return
+
+    st.caption(
+        "Das Modell lernt aus deinen bereits kategorisierten **Ausgaben** und "
+        "ordnet ähnliche neue Buchungen automatisch zu – nur wenn Regeln & "
+        "gelernte Händler nichts finden und die Sicherheit hoch genug ist. "
+        "Alles bleibt lokal auf deinem Rechner."
+    )
+
+    status = "✅ trainiert" if ml.model_exists() else "— noch nicht trainiert"
+    st.markdown(f"**Modellstatus:** {status}")
+
+    threshold = st.slider(
+        "Mindest-Sicherheit für eine automatische Zuordnung", 0.40, 0.90,
+        ml.DEFAULT_THRESHOLD, 0.05,
+        help="Höher = weniger, aber sicherere automatische Zuordnungen.")
+
+    c1, c2 = st.columns(2)
+    if c1.button("🧠 Modell trainieren & anwenden", type="primary"):
+        try:
+            with st.spinner("Trainiere Modell …"):
+                metrics = storage.train_model()
+                n = storage.recategorize_all(ml_threshold=threshold)
+            storage.set_recurring_bulk(_recurring_pairs())
+            refresh()
+            acc = metrics.get("accuracy")
+            acc_txt = f", geschätzte Trefferquote ≈ {acc*100:.0f}%" if acc else ""
+            st.success(
+                f"Modell trainiert auf {metrics['n_samples']} Buchungen in "
+                f"{metrics['n_classes']} Kategorien{acc_txt}. "
+                f"{n} Umsätze neu kategorisiert.")
+            st.rerun()
+        except RuntimeError as exc:
+            st.error(str(exc))
+
+    if ml.model_exists() and c2.button("🗑️ Modell löschen"):
+        ml.delete_model()
+        storage.recategorize_all()
+        refresh()
+        st.success("Modell gelöscht. Es gelten wieder nur Regeln & gelernte Händler.")
+        st.rerun()
+
+
 def tab_settings(df: pd.DataFrame) -> None:
     st.subheader("⚙️ Einstellungen & Daten")
 
@@ -458,6 +508,9 @@ def tab_settings(df: pd.DataFrame) -> None:
             refresh()
             st.success("Alle Daten gelöscht.")
             st.rerun()
+
+    st.divider()
+    _ml_ui()
 
     st.divider()
     n_learned = storage.count_learned()
