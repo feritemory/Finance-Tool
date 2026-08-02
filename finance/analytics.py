@@ -90,6 +90,39 @@ def timeseries(df: pd.DataFrame, freq: str = "M") -> pd.DataFrame:
     return g.sort_values("periode").reset_index(drop=True)
 
 
+def monthly_average(df: pd.DataFrame) -> dict:
+    """Durchschnitt je Monat für Einnahmen, Ausgaben und Sparen.
+
+    Ein angebrochener letzter Monat (z. B. der laufende) wird ausgeklammert,
+    damit er den Schnitt nicht nach unten zieht. ``monate`` gibt zurück, über
+    wie viele vollständige Monate gemittelt wurde.
+    """
+    leer = {"einnahmen": 0.0, "ausgaben": 0.0, "sparen": 0.0, "monate": 0}
+    if df.empty:
+        return leer
+
+    ts = timeseries(df, "M")
+    if ts.empty:
+        return leer
+
+    # Letzten Monat verwerfen, wenn die Daten dort vor dem Monatsende enden.
+    letzter = ts["periode"].max()
+    max_datum = df["date"].max()
+    monatsende = letzter + pd.offsets.MonthEnd(0)
+    if max_datum < monatsende and len(ts) > 1:
+        ts = ts[ts["periode"] < letzter]
+
+    n = len(ts)
+    if n == 0:
+        return leer
+    return {
+        "einnahmen": float(ts["einnahmen"].sum() / n),
+        "ausgaben": float(ts["ausgaben"].sum() / n),
+        "sparen": float(ts["sparen"].sum() / n),
+        "monate": int(n),
+    }
+
+
 def category_over_time(df: pd.DataFrame, freq: str = "M",
                        typ: str = "ausgabe") -> pd.DataFrame:
     """Pivot: Periode x Kategorie (Beträge positiv) – für gestapelte Diagramme."""

@@ -83,7 +83,7 @@ Danach den Rechner neu starten.
 
 | Bereich | Beschreibung |
 |---|---|
-| **📊 Übersicht** | Kennzahlen (Einnahmen, Ausgaben, Sparen, Saldo, Fixkosten), Einnahmen-vs-Ausgaben-Verlauf, Kategorien-Tortendiagramm, gestapelter Kategorienverlauf. Umschaltbar zwischen **täglich / monatlich / jährlich**. |
+| **📊 Übersicht** | Summen im Zeitraum **und Durchschnitt pro Monat** (Ø Einnahmen, Ø Ausgaben, davon Fixkosten, Ø Sparen – gemittelt nur über vollständige Monate). Einnahmen/Ausgaben/Sparen als **gruppierte Balken nebeneinander** (alle positiv, eine gemeinsame Achse), Saldo-Verlauf, Ausgaben je Kategorie, gestapelter Kategorienverlauf. Umschaltbar zwischen **täglich / monatlich / jährlich**. |
 | **🔁 Fixkosten** | Automatische Erkennung wiederkehrender Zahlungen (Miete, Abos, Sparpläne …) und Summe der monatlichen Fixkosten. |
 | **📋 Transaktionen** | Alle Umsätze durchsuchen; Kategorie oder Fixkosten-Kennzeichen pro Buchung manuell korrigieren. |
 | **📥 Import** | CSV-/CAMT-Import (Consorsbank & andere Banken) + optionaler automatischer Kontoabruf per PSD2. |

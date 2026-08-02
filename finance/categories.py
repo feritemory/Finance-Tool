@@ -26,20 +26,31 @@ class Category:
 UNCATEGORIZED = "Sonstiges"
 INCOME_UNCATEGORIZED = "Sonstige Einnahmen"
 
+# Farben: validierte kategoriale Palette (feste Slot-Reihenfolge, auf
+# Farbfehlsichtigkeit geprüft). Ausgaben- und Einnahmen-Kategorien erscheinen
+# nie im selben Diagramm, dürfen sich die Slots also teilen.
+# Auffang-Kategorien ("Sonstiges") bekommen bewusst Neutralgrau.
 CATEGORIES: list[Category] = [
-    Category("Lebensmittel",                 "ausgabe", "#4E79A7"),
-    Category("Auswärts Essen und Trinken",   "ausgabe", "#F28E2B"),
-    Category("Shoppen",                      "ausgabe", "#E15759"),
-    Category("Freizeit",                     "ausgabe", "#76B7B2"),
-    Category("Reisen",                       "ausgabe", "#59A14F"),
-    Category("Wohnkosten inkl. Internet und Handykosten", "ausgabe", "#EDC948", fixkosten=True),
-    Category("Sport",                        "ausgabe", "#B07AA1", fixkosten=True),
-    Category("Gehalt",                       "einnahme", "#2E7D32"),
-    Category("Bafög",                        "einnahme", "#9C755F"),
-    Category(INCOME_UNCATEGORIZED,           "einnahme", "#7FB069"),
-    Category("Überweisung an Sparkonten",    "sparen",   "#4C72B0", fixkosten=True),
-    Category(UNCATEGORIZED,                  "ausgabe", "#BAB0AC"),
+    Category("Lebensmittel",                 "ausgabe", "#2a78d6"),   # Slot 1 blau
+    Category("Auswärts Essen und Trinken",   "ausgabe", "#eb6834"),   # Slot 2 orange
+    Category("Shoppen",                      "ausgabe", "#1baf7a"),   # Slot 3 aqua
+    Category("Freizeit",                     "ausgabe", "#eda100"),   # Slot 4 gelb
+    Category("Reisen",                       "ausgabe", "#e87ba4"),   # Slot 5 magenta
+    Category("Wohnkosten inkl. Internet und Handykosten", "ausgabe", "#008300", fixkosten=True),
+    Category("Sport",                        "ausgabe", "#4a3aa7", fixkosten=True),
+    Category("Gehalt",                       "einnahme", "#1baf7a"),
+    Category("Bafög",                        "einnahme", "#eda100"),
+    Category(INCOME_UNCATEGORIZED,           "einnahme", "#2a78d6"),
+    Category("Überweisung an Sparkonten",    "sparen",   "#2a78d6", fixkosten=True),
+    Category(UNCATEGORIZED,                  "ausgabe", "#9a9a94"),   # Auffang: grau
 ]
+
+# Semantische Farben der Hauptkennzahlen (gleiche validierte Slots).
+SERIES_COLORS = {
+    "einnahmen": "#1baf7a",
+    "ausgaben": "#eb6834",
+    "sparen": "#2a78d6",
+}
 
 CATEGORY_BY_NAME: dict[str, Category] = {c.name: c for c in CATEGORIES}
 CATEGORY_NAMES: list[str] = [c.name for c in CATEGORIES]

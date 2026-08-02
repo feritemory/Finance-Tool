@@ -12,18 +12,29 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from finance import analytics, ml, storage
-from finance.categories import CATEGORY_NAMES, COLOR_MAP, UNCATEGORIZED
+from finance import analytics, ml, storage, ui
+from finance.categories import (CATEGORY_NAMES, COLOR_MAP, SERIES_COLORS,
+                                UNCATEGORIZED)
 from finance.importer import parse_file
 from finance import sampledata
 
 st.set_page_config(page_title="Finance-Tool", page_icon="💶", layout="wide")
+st.markdown(ui.CSS, unsafe_allow_html=True)
 
 EUR = "€"
 
 
 def fmt(v: float) -> str:
     return f"{v:,.2f} {EUR}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def fmt_kurz(v: float) -> str:
+    """Kompakte Beschriftung direkt am Balken (ohne Nachkommastellen)."""
+    return f"{v:,.0f}".replace(",", ".") + " €"
+
+
+def caption(text: str) -> None:
+    st.markdown(f'<div class="kpi-caption">{text}</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +87,8 @@ def sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
         if sel_month != "Alle":
             d = d[d["month"] == sel_month]
 
-    cats = st.sidebar.multiselect("Kategorien", CATEGORY_NAMES, default=[])
+    cats = st.sidebar.multiselect("Kategorien", CATEGORY_NAMES, default=[],
+                                  placeholder="Alle Kategorien")
     if cats:
         d = d[d["category"].isin(cats)]
 
@@ -97,55 +109,128 @@ def tab_overview(df: pd.DataFrame) -> None:
 
     s = analytics.summary(df)
     fix = analytics.monthly_fixed_costs(df)
+    avg = analytics.monthly_average(df)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    # --- Kennzahlen: Summen im Zeitraum ---
+    caption("Gesamt im gewählten Zeitraum")
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Einnahmen", fmt(s["einnahmen"]))
     c2.metric("Ausgaben", fmt(s["ausgaben"]))
     c3.metric("Sparen", fmt(s["sparen"]))
     c4.metric("Saldo", fmt(s["saldo"]))
-    c5.metric("Fixkosten / Monat", fmt(fix))
+
+    # --- Kennzahlen: Durchschnitt pro Monat ---
+    st.write("")
+    monate = avg["monate"]
+    caption(f"Pro Monat &nbsp;·&nbsp; Ø über {monate} vollständige"
+            f"{'n' if monate == 1 else ''} Monat{'e' if monate != 1 else ''}")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Ø Einnahmen", fmt(avg["einnahmen"]))
+    m2.metric("Ø Ausgaben", fmt(avg["ausgaben"]))
+    m3.metric("davon Fixkosten", fmt(fix))
+    m4.metric("Ø Sparen", fmt(avg["sparen"]))
+    if avg["ausgaben"] > 0:
+        variabel = max(avg["ausgaben"] - fix, 0.0)
+        st.caption(f"Das entspricht rund **{fmt(variabel)}** variablen Ausgaben "
+                   f"pro Monat (Ø Ausgaben abzüglich Fixkosten).")
 
     st.divider()
 
-    # Zeitraum-Umschalter
+    # --- Zeitraum-Umschalter ---
     gran = st.radio("Zeitliche Auflösung", ["Täglich", "Monatlich", "Jährlich"],
                     index=1, horizontal=True)
     freq = {"Täglich": "D", "Monatlich": "M", "Jährlich": "Y"}[gran]
 
     ts = analytics.timeseries(df, freq)
-    left, right = st.columns([3, 2])
+    datumsformat = {"D": "%d.%m.%Y", "M": "%b %Y", "Y": "%Y"}[freq]
 
-    with left:
-        st.subheader("Einnahmen vs. Ausgaben")
+    st.markdown("### Einnahmen, Ausgaben und Sparen im Vergleich")
+    if ts.empty:
+        st.caption("Keine Daten im Zeitraum.")
+    else:
+        # Gruppierte Balken: alle Werte positiv nebeneinander auf einer Achse.
+        beschriften = len(ts) <= 14      # Zahlen nur zeigen, wenn sie lesbar bleiben
         fig = go.Figure()
-        fig.add_bar(x=ts["periode"], y=ts["einnahmen"], name="Einnahmen",
-                    marker_color="#2E7D32")
-        fig.add_bar(x=ts["periode"], y=-ts["ausgaben"], name="Ausgaben",
-                    marker_color="#E15759")
-        fig.add_bar(x=ts["periode"], y=-ts["sparen"], name="Sparen",
-                    marker_color="#4C72B0")
-        fig.add_trace(go.Scatter(x=ts["periode"], y=ts["saldo"], name="Saldo",
-                                 mode="lines+markers", line=dict(color="#111", width=2)))
-        fig.update_layout(barmode="relative", height=420,
-                          legend=dict(orientation="h", y=1.1),
-                          margin=dict(t=10, b=10, l=10, r=10))
+        for name, spalte in (("Einnahmen", "einnahmen"),
+                             ("Ausgaben", "ausgaben"),
+                             ("Sparen", "sparen")):
+            fig.add_bar(
+                x=ts["periode"], y=ts[spalte], name=name,
+                marker=dict(color=SERIES_COLORS[spalte], cornerradius=4),
+                # Nullwerte nicht beschriften – sie erzeugen sonst nur Rauschen.
+                text=[fmt_kurz(v) if v else "" for v in ts[spalte]]
+                     if beschriften else None,
+                textposition="outside",
+                textfont=dict(size=10, color=ui.INK_SOFT),
+                cliponaxis=False,
+                hovertemplate=f"<b>{name}</b>: %{{y:,.2f}} €<extra></extra>",
+            )
+        fig.update_layout(barmode="group", hovermode="x unified")
+        ui.style_fig(fig, height=400)
+        fig.update_xaxes(hoverformat=datumsformat)
         st.plotly_chart(fig, use_container_width=True)
 
+        with st.expander("Werte als Tabelle anzeigen"):
+            tab = ts.copy()
+            tab["periode"] = tab["periode"].dt.strftime(
+                "%d.%m.%Y" if freq == "D" else ("%m/%Y" if freq == "M" else "%Y"))
+            tab = tab.rename(columns={
+                "periode": "Zeitraum", "einnahmen": "Einnahmen",
+                "ausgaben": "Ausgaben", "sparen": "Sparen", "saldo": "Saldo"})
+            for spalte in ("Einnahmen", "Ausgaben", "Sparen", "Saldo"):
+                tab[spalte] = tab[spalte].map(fmt)
+            st.dataframe(tab, use_container_width=True, hide_index=True)
+
+    left, right = st.columns([3, 2], gap="large")
+
+    with left:
+        st.markdown("### Saldo je Zeitraum")
+        st.caption("Einnahmen abzüglich Ausgaben und Sparen.")
+        if not ts.empty:
+            fig = go.Figure()
+            fig.add_hline(y=0, line_width=1, line_color=ui.LINE)
+            fig.add_trace(go.Scatter(
+                x=ts["periode"], y=ts["saldo"], mode="lines+markers",
+                name="Saldo", line=dict(color=ui.INK, width=2),
+                marker=dict(size=8, color=ui.INK,
+                            line=dict(width=2, color=ui.SURFACE)),
+                hovertemplate=f"%{{x|{datumsformat}}}<br>"
+                              "%{y:,.2f} €<extra></extra>"))
+            ui.style_fig(fig, height=320, legend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
     with right:
-        st.subheader("Ausgaben nach Kategorie")
+        st.markdown("### Ausgaben nach Kategorie")
         cat = analytics.by_category(df, "ausgabe")
         if cat.empty:
             st.caption("Keine Ausgaben im Zeitraum.")
         else:
-            fig = px.pie(cat, names="category", values="betrag", hole=0.5,
-                         color="category", color_discrete_map=COLOR_MAP)
-            fig.update_traces(textposition="inside", textinfo="percent")
-            fig.update_layout(height=420, margin=dict(t=10, b=10, l=10, r=10),
-                              legend=dict(orientation="h", y=-0.1))
+            # Waagerechte Balken statt Tortendiagramm: Die Kategorienamen stehen
+            # direkt an der Achse, kleine Beträge bleiben lesbar (im Kreis
+            # würden sie zu unlesbaren Splittern) und die Beträge lassen sich
+            # der Länge nach vergleichen.
+            gesamt = cat["betrag"].sum()
+            cat = cat.sort_values("betrag")
+            fig = go.Figure(go.Bar(
+                x=cat["betrag"], y=cat["category"], orientation="h",
+                marker=dict(color=[COLOR_MAP.get(c, ui.INK_FAINT)
+                                   for c in cat["category"]], cornerradius=4),
+                text=[fmt_kurz(v) for v in cat["betrag"]],
+                textposition="outside",
+                textfont=dict(size=11, color=ui.INK_SOFT),
+                cliponaxis=False,
+                customdata=(cat["betrag"] / gesamt * 100 if gesamt else cat["betrag"]),
+                hovertemplate="<b>%{y}</b><br>%{x:,.2f} € · "
+                              "%{customdata:.1f} %<extra></extra>",
+            ))
+            ui.style_fig(fig, height=320, legend=False, show_grid=False)
+            fig.update_xaxes(visible=False, range=[0, cat["betrag"].max() * 1.28])
+            fig.update_yaxes(tickfont=dict(color=ui.INK_SOFT, size=11))
+            fig.update_layout(margin=dict(t=8, b=8, l=8, r=8))
             st.plotly_chart(fig, use_container_width=True)
 
-    # Gestapelte Kategorien über die Zeit – umschaltbar Ausgaben/Einnahmen
-    st.subheader("Kategorien im Zeitverlauf")
+    # --- Gestapelte Kategorien über die Zeit ---
+    st.markdown("### Kategorien im Zeitverlauf")
     art = st.radio("Anzeigen", ["Ausgaben", "Einnahmen"], index=0, horizontal=True,
                    label_visibility="collapsed")
     typ = "ausgabe" if art == "Ausgaben" else "einnahme"
@@ -157,8 +242,13 @@ def tab_overview(df: pd.DataFrame) -> None:
                                       value_name="Betrag")
         fig = px.bar(long, x="periode", y="Betrag", color="Kategorie",
                      color_discrete_map=COLOR_MAP)
-        fig.update_layout(height=400, margin=dict(t=10, b=10, l=10, r=10),
-                          legend=dict(orientation="h", y=-0.2))
+        fig.update_traces(marker=dict(line=dict(color=ui.SURFACE, width=1)),
+                          hovertemplate="<b>%{fullData.name}</b><br>"
+                                        f"%{{x|{datumsformat}}}<br>"
+                                        "%{y:,.2f} €<extra></extra>")
+        ui.style_fig(fig, height=400)
+        fig.update_xaxes(title_text=None)
+        fig.update_yaxes(title_text=None)
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -200,15 +290,27 @@ def tab_fixed(df: pd.DataFrame) -> None:
     if fixkosten.empty:
         st.caption("Keine wiederkehrenden Fixkosten erkannt.")
     else:
-        left, right = st.columns([3, 2])
-        left.dataframe(_table(fixkosten), use_container_width=True, hide_index=True)
-        fig = px.bar(fixkosten, x="median_betrag", y="merchant", orientation="h",
-                     color="category", color_discrete_map=COLOR_MAP,
-                     labels={"median_betrag": "€/Monat", "merchant": ""})
-        fig.update_layout(height=max(280, 38 * len(fixkosten)), showlegend=False,
-                          margin=dict(t=10, b=10, l=10, r=10),
-                          yaxis=dict(autorange="reversed"))
-        right.plotly_chart(fig, use_container_width=True)
+        # Volle Breite für beides: die Empfängernamen sind lang, nebeneinander
+        # würden Tabelle und Diagramm sich gegenseitig abschneiden.
+        f = fixkosten.sort_values("median_betrag")
+        fig = go.Figure(go.Bar(
+            x=f["median_betrag"], y=f["merchant"], orientation="h",
+            marker=dict(color=[COLOR_MAP.get(c, ui.INK_FAINT) for c in f["category"]],
+                        cornerradius=4),
+            text=[fmt_kurz(v) for v in f["median_betrag"]],
+            textposition="outside",
+            textfont=dict(size=11, color=ui.INK_SOFT),
+            cliponaxis=False,
+            customdata=f["category"],
+            hovertemplate="<b>%{y}</b><br>%{x:,.2f} € / Monat"
+                          "<br>%{customdata}<extra></extra>",
+        ))
+        ui.style_fig(fig, height=max(260, 34 * len(f)), legend=False, show_grid=False)
+        fig.update_xaxes(visible=False,
+                         range=[0, f["median_betrag"].max() * 1.18])
+        fig.update_yaxes(tickfont=dict(color=ui.INK_SOFT, size=11))
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(_table(fixkosten), use_container_width=True, hide_index=True)
 
     if not sparen.empty:
         st.markdown("#### 💰 Feste Sparbeträge (Überträge auf Sparkonten)")
