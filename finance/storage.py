@@ -208,12 +208,46 @@ def update_category(tx_id: int, category: str, manual: bool = True,
     return also
 
 
-def set_recurring(tx_id: int, recurring: bool, manual: bool = True) -> None:
+def set_recurring(tx_id: int, recurring: bool, manual: bool = True) -> int:
+    """Setzt das Fixkosten-Kennzeichen eines Umsatzes.
+
+    Eine manuelle Entscheidung gilt für **alle Ausgaben desselben Empfängers** –
+    sonst stünde in der Liste dieselbe wiederkehrende Zahlung teils mit, teils
+    ohne Häkchen und die Auswertung wäre nicht nachvollziehbar.
+    Rückgabe: Anzahl zusätzlich angepasster Umsätze.
+    """
+    wert = 1 if recurring else 0
+    also = 0
     with _connect() as conn:
         conn.execute(
             "UPDATE transactions SET is_recurring=?, recurring_manual=? WHERE id=?",
-            (1 if recurring else 0, 1 if manual else 0, tx_id),
+            (wert, 1 if manual else 0, tx_id),
         )
+        if not manual:
+            return 0
+        row = conn.execute(
+            "SELECT counterparty, description, booking_text, bic "
+            "FROM transactions WHERE id=?", (tx_id,)
+        ).fetchone()
+        if not row:
+            return 0
+        key = merchant_key(row["counterparty"], row["description"],
+                           row["booking_text"], row["bic"] or "")
+        if not key:
+            return 0
+        # Nur Abflüsse – Fixkosten sind immer Ausgaben.
+        others = conn.execute(
+            "SELECT id, counterparty, description, booking_text, bic "
+            "FROM transactions WHERE id!=? AND amount < 0", (tx_id,)
+        ).fetchall()
+        for o in others:
+            if merchant_key(o["counterparty"], o["description"],
+                            o["booking_text"], o["bic"] or "") == key:
+                conn.execute(
+                    "UPDATE transactions SET is_recurring=?, recurring_manual=1 "
+                    "WHERE id=?", (wert, o["id"]))
+                also += 1
+    return also
 
 
 def set_recurring_bulk(pairs: list[tuple[int, bool]]) -> None:
@@ -304,6 +338,23 @@ def clear_demo() -> int:
     """Entfernt nur die Demo-Buchungen, echte importierte Umsätze bleiben erhalten."""
     with _connect() as conn:
         cur = conn.execute("DELETE FROM transactions WHERE source='sample'")
+        return cur.rowcount
+
+
+def count_recurring_manual() -> int:
+    """Anzahl Umsätze mit manuell gesetztem Fixkosten-Kennzeichen."""
+    init_db()
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE recurring_manual=1"
+        ).fetchone()[0]
+
+
+def clear_recurring_manual() -> int:
+    """Verwirft alle manuellen Fixkosten-Entscheidungen (Heuristik übernimmt wieder)."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE transactions SET recurring_manual=0 WHERE recurring_manual=1")
         return cur.rowcount
 
 

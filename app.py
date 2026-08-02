@@ -282,8 +282,11 @@ def tab_fixed(df: pd.DataFrame) -> None:
             "category": "Kategorie",
             "monate": "Monate",
             "median_betrag": "Betrag/Monat",
-        })[["Empfänger (erkannt)", "Kategorie", "Monate", "Betrag/Monat"]].copy()
+        })[["Empfänger (erkannt)", "Kategorie", "Monate", "Betrag/Monat",
+            "manuell"]].copy()
         view["Betrag/Monat"] = view["Betrag/Monat"].map(fmt)
+        view["Quelle"] = view.pop("manuell").map(
+            lambda m: "manuell gesetzt" if m else "automatisch erkannt")
         return view
 
     st.markdown("#### 🔁 Fixkosten")
@@ -316,10 +319,13 @@ def tab_fixed(df: pd.DataFrame) -> None:
         st.markdown("#### 💰 Feste Sparbeträge (Überträge auf Sparkonten)")
         st.dataframe(_table(sparen), use_container_width=True, hide_index=True)
 
-    st.caption("Heuristische Erkennung anhand wiederkehrender Empfänger/Konten und "
-               "konstanter Beträge. Häufig frequentierte Händler (z. B. Supermärkte) "
-               "werden bewusst ausgeschlossen. Schwellen anpassbar in "
-               "`finance/analytics.py` → `detect_recurring`.")
+    st.caption(
+        "Heuristische Erkennung anhand wiederkehrender Empfänger/Konten und "
+        "konstanter Beträge; häufig frequentierte Händler (z. B. Supermärkte) "
+        "werden bewusst ausgeschlossen. **Stimmt etwas nicht?** Setze oder "
+        "entferne im Tab *📋 Transaktionen* das Häkchen **Fixkosten** – deine "
+        "Entscheidung gilt für alle Buchungen dieses Empfängers und übersteuert "
+        "die Automatik dauerhaft.")
 
 
 # ---------------------------------------------------------------------------
@@ -372,18 +378,24 @@ def tab_transactions(df: pd.DataFrame) -> None:
                     int(tx_id), new.loc[tx_id, "Kategorie"], manual=True)
                 changes += 1
             if bool(new.loc[tx_id, "Fixkosten"]) != bool(orig.loc[tx_id, "Fixkosten"]):
-                storage.set_recurring(int(tx_id), bool(new.loc[tx_id, "Fixkosten"]), manual=True)
+                also += storage.set_recurring(
+                    int(tx_id), bool(new.loc[tx_id, "Fixkosten"]), manual=True)
                 changes += 1
         refresh()
         msg = f"{changes} Änderung(en) gespeichert."
         if also:
-            msg += f" {also} weitere Buchung(en) desselben Händlers automatisch angepasst."
+            msg += (f" {also} weitere Buchung(en) desselben Empfängers automatisch "
+                    "mit angepasst.")
+        msg += " Übersicht und Fixkosten sind aktualisiert."
         st.success(msg)
         st.rerun()
 
-    st.caption(f"{len(show)} Transaktionen angezeigt. Wenn du eine Kategorie änderst, "
-               "**merkt sich das Tool den Händler** und ordnet künftige (und weitere "
-               "vorhandene) Buchungen automatisch genauso ein.")
+    st.caption(
+        f"{len(show)} Transaktionen angezeigt. Änderungen gelten jeweils für **alle "
+        "Buchungen desselben Empfängers**: Eine geänderte Kategorie merkt sich das "
+        "Tool auch für künftige Umsätze, ein geändertes Fixkosten-Häkchen "
+        "übersteuert die automatische Erkennung dauerhaft. Nach *Speichern* "
+        "aktualisieren sich Übersicht und Fixkosten sofort.")
 
 
 # ---------------------------------------------------------------------------
@@ -620,16 +632,32 @@ def tab_settings(df: pd.DataFrame) -> None:
     _ml_ui()
 
     st.divider()
-    n_learned = storage.count_learned()
-    st.markdown(f"**Gelernte Händler-Regeln:** {n_learned}")
-    st.caption("Jede manuelle Kategorie-Korrektur im Tab *Transaktionen* wird hier "
-               "als Regel gespeichert und künftig automatisch angewendet.")
-    if n_learned and st.checkbox("Gelernte Regeln zurücksetzen"):
-        if st.button("🧠 Gelernte Regeln löschen"):
-            storage.clear_learned()
-            refresh()
-            st.success("Gelernte Regeln gelöscht.")
-            st.rerun()
+    l1, l2 = st.columns(2)
+
+    with l1:
+        n_learned = storage.count_learned()
+        st.markdown(f"**Gelernte Händler-Regeln:** {n_learned}")
+        st.caption("Jede manuelle Kategorie-Korrektur im Tab *Transaktionen* wird "
+                   "hier als Regel gespeichert und künftig automatisch angewendet.")
+        if n_learned and st.checkbox("Gelernte Regeln zurücksetzen"):
+            if st.button("🧠 Gelernte Regeln löschen"):
+                storage.clear_learned()
+                refresh()
+                st.success("Gelernte Regeln gelöscht.")
+                st.rerun()
+
+    with l2:
+        n_manual = storage.count_recurring_manual()
+        st.markdown(f"**Manuelle Fixkosten-Entscheidungen:** {n_manual}")
+        st.caption("Umsätze, bei denen du das Fixkosten-Häkchen selbst gesetzt oder "
+                   "entfernt hast. Diese übersteuern die automatische Erkennung.")
+        if n_manual and st.checkbox("Fixkosten-Entscheidungen zurücksetzen"):
+            if st.button("🔁 Auf automatische Erkennung zurücksetzen"):
+                n = storage.clear_recurring_manual()
+                storage.set_recurring_bulk(_recurring_pairs())
+                refresh()
+                st.success(f"{n} manuelle Fixkosten-Entscheidungen verworfen.")
+                st.rerun()
 
     st.divider()
     if not df.empty:

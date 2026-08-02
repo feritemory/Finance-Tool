@@ -155,10 +155,16 @@ def detect_recurring(df: pd.DataFrame, min_months: int = 3,
     "Dauerauftrag" lautet (z. B. Revolut −400, Trade Republic −800, Miete −637),
     während schwankende Ausgaben (Shopping, Essen) ausgeschlossen bleiben.
 
+    Manuelle Entscheidungen haben Vorrang: Wird im Tab "Transaktionen" das
+    Fixkosten-Häkchen gesetzt oder entfernt (Spalten ``recurring_manual`` /
+    ``is_recurring``), gilt das für den gesamten Empfänger und übersteuert die
+    Heuristik in beide Richtungen.
+
     Rückgabe je Gruppe: merchant, category, monate, median_betrag, tx_ids,
-                        ist_sparen
+                        ist_sparen, manuell
     """
-    cols = ["merchant", "category", "monate", "median_betrag", "tx_ids", "ist_sparen"]
+    cols = ["merchant", "category", "monate", "median_betrag", "tx_ids",
+            "ist_sparen", "manuell"]
     empty = pd.DataFrame(columns=cols)
     if df.empty:
         return empty
@@ -177,6 +183,17 @@ def detect_recurring(df: pd.DataFrame, min_months: int = 3,
     sub["ym"] = sub["date"].dt.to_period("M").astype(str)
     sub = sub[sub["key"] != ""]
 
+    # --- Manuelle Übersteuerungen je Empfänger einsammeln ---
+    manuell_aus: set[str] = set()
+    manuell_ein: set[str] = set()
+    if {"recurring_manual", "is_recurring"} <= set(sub.columns):
+        man = sub[sub["recurring_manual"].fillna(0).astype(int) == 1]
+        if not man.empty:
+            rec_flag = man["is_recurring"].fillna(0).astype(int)
+            manuell_aus = set(man.loc[rec_flag == 0, "key"])
+            manuell_ein = set(man.loc[rec_flag == 1, "key"])
+    manuell_ein -= manuell_aus        # explizites Abwählen gewinnt
+
     # Häufig frequentierte Händler (z. B. Lidl, Restaurants) sind variable
     # Ausgaben, keine Fixkosten – auch wenn einzelne Beträge zufällig
     # wiederkehren. Eigene Konten (BIC) sind ausgenommen, da dort neben festen
@@ -187,27 +204,37 @@ def detect_recurring(df: pd.DataFrame, min_months: int = 3,
         if not k.startswith("bic:") and row["n"] / max(row["m"], 1) > 1.5
     }
 
+    def _zeile(grp: pd.DataFrame, key: str, manuell: bool) -> dict:
+        first = grp.iloc[0]
+        cat = grp["category"].mode().iat[0]
+        return {
+            "merchant": clean_name(first["counterparty"], first["description"],
+                                   first.get("bic") or "") or key,
+            "category": cat,
+            "monate": int(grp["ym"].nunique()),
+            "median_betrag": float(grp["betrag"].median()),
+            "tx_ids": grp["id"].tolist(),
+            "ist_sparen": bool(is_saving(cat)),
+            "manuell": manuell,
+        }
+
     results = []
+    # 1) Manuell als Fixkosten markierte Empfänger – immer aufnehmen.
+    for key in sorted(manuell_ein):
+        grp = sub[sub["key"] == key]
+        if not grp.empty:
+            results.append(_zeile(grp, key, manuell=True))
+
+    # 2) Heuristik für alle übrigen Empfänger.
     for (key, _amt), grp in sub.groupby(["key", "amt_round"]):
-        if key in frequent:
+        if key in manuell_aus or key in manuell_ein or key in frequent:
             continue
         months = grp["ym"].nunique()
         if months < min_months:
             continue
         if len(grp) > months * max_per_month:      # ~1×/Monat
             continue
-        first = grp.iloc[0]
-        name = clean_name(first["counterparty"], first["description"],
-                          first.get("bic") or "")
-        cat = grp["category"].mode().iat[0]
-        results.append({
-            "merchant": name or key,
-            "category": cat,
-            "monate": int(months),
-            "median_betrag": float(grp["betrag"].median()),
-            "tx_ids": grp["id"].tolist(),
-            "ist_sparen": bool(is_saving(cat)),
-        })
+        results.append(_zeile(grp, key, manuell=False))
 
     out = pd.DataFrame(results, columns=cols)
     if out.empty:
