@@ -36,6 +36,11 @@ Januar 2026** geladen, damit du sofort etwas siehst.
 
 ### Problembehebung (Windows)
 
+**Klammern im Ordnernamen** (z. B. `Finance-Tool (1)`) haben `run.bat` früher
+sofort abstürzen lassen: Eine schließende Klammer aus dem Pfad beendete in
+`cmd` einen `if (...)`-Block vorzeitig. Das ist behoben – der Ablauf kommt ohne
+solche Blöcke aus. Ordnernamen mit Klammern sind also unproblematisch.
+
 **Das `cmd`-Fenster öffnet sich und schließt sich sofort wieder?**
 Das passiert, wenn ein Fehler auftritt (meist: Python nicht installiert oder
 nicht im PATH). Das aktuelle `run.bat` fängt das ab und bleibt mit einer
