@@ -4,35 +4,55 @@ Eine schlanke, **lokal laufende** Desktop-App, um Einnahmen und Ausgaben zu
 **tracken, kategorisieren und visualisieren** – täglich, monatlich und jährlich.
 Zusätzlich ermittelt das Tool automatisch deine **monatlichen Fixkosten**.
 
-Die App läuft komplett auf deinem Rechner (Streamlit im Browser). Deine echten
-Umsätze werden lokal in einer SQLite-Datenbank gespeichert und **nie** ins
-Internet hochgeladen.
+Das Programm läuft **vollständig auf deinem Rechner** – in einem eigenen Fenster,
+ohne Browser-Tab und ohne Terminal. Deine Umsätze liegen lokal in einer
+SQLite-Datenbank und werden **nie** ins Internet übertragen. Der interne Server
+lauscht ausschliesslich auf `127.0.0.1` und ist von aussen nicht erreichbar.
 
 ---
 
 ## Schnellstart
 
-### macOS / Linux
-```bash
-./run.sh
-```
-
 ### Windows
-```bat
-run.bat
+Doppelklick auf **`Finance-Tool.bat`**
+
+### macOS / Linux
+Doppelklick auf **`Finance-Tool.command`** – oder im Terminal:
+```bash
+./Finance-Tool.command
 ```
 
-Beim ersten Start wird automatisch eine virtuelle Umgebung angelegt, alle
-Abhängigkeiten installiert und die App im Browser geöffnet
-(http://localhost:8501). Beim allerersten Start werden **Demo-Daten ab
-Januar 2026** geladen, damit du sofort etwas siehst.
+Beim ersten Start werden eine virtuelle Umgebung angelegt und alle
+Abhängigkeiten installiert (das dauert einige Minuten). Danach öffnet sich das
+Programm in wenigen Sekunden in einem eigenen Fenster.
+
+> **Verknüpfung auf dem Desktop:** Rechtsklick auf `Finance-Tool.bat` →
+> *Senden an* → *Desktop (Verknüpfung erstellen)*. Über *Eigenschaften* lässt
+> sich der Verknüpfung auch ein eigenes Symbol geben.
+
+Beim allerersten Start ist die Datenbank leer – lade deine Umsätze im Bereich
+**Import** hoch. Zum Ausprobieren gibt es unter **Einstellungen** Demo-Daten.
 
 > Alternativ manuell:
 > ```bash
 > python3 -m venv .venv && source .venv/bin/activate
 > pip install -r requirements.txt
-> streamlit run app.py
+> pip install pywebview        # optional: natives Fenster
+> python desktop.py
 > ```
+> Ohne `pywebview` startet das Programm ersatzweise im Standardbrowser –
+> alle Funktionen bleiben identisch.
+
+### Aufbau
+
+Die Oberfläche ist eine eigenständige HTML/CSS/JS-Anwendung (`webui/`), die von
+einem lokalen Flask-Server (`finance/server.py`) bedient wird. Die Diagramme
+sind selbst gezeichnetes SVG – es werden **keine externen Bibliotheken oder
+Web-Ressourcen** geladen, das Programm funktioniert vollständig offline.
+
+> Die frühere **Streamlit-Oberfläche** bleibt als Alternative erhalten
+> (`run.bat` / `./run.sh` bzw. `streamlit run app.py`). Beide greifen auf
+> dieselbe Datenbank und dieselbe Logik zu.
 
 ### Problembehebung (Windows)
 
@@ -213,8 +233,17 @@ Consorsbank wird unterstützt.
 
 ```
 Finance-Tool/
-├── app.py                  # Streamlit-Oberfläche (Tabs, Diagramme)
+├── Finance-Tool.bat        # Start unter Windows (Doppelklick)
+├── Finance-Tool.command    # Start unter macOS/Linux
+├── desktop.py              # startet Server + eigenes Fenster
+├── webui/                  # Oberfläche (HTML/CSS/JS, SVG-Diagramme)
+│   ├── index.html
+│   ├── styles.css
+│   ├── app.js
+│   └── charts.js
+├── app.py                  # optionale Streamlit-Oberfläche
 ├── finance/
+│   ├── server.py           # lokaler Flask-Server (JSON-Schnittstelle)
 │   ├── categories.py       # Kategorie-Definitionen (Typ, Farbe, Fixkosten)
 │   ├── categorize.py       # Regelbasierte Auto-Kategorisierung
 │   ├── importer.py         # CSV-/CAMT-Parser (deutsche Zahlen/Daten, Duplikate)

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Finance-Tool</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M11 23V9h10M11 16h8' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-icon">◧</span> Finance-Tool</div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item is-active" data-tab="uebersicht"><span>▤</span> Übersicht</button>
+      <button class="nav-item" data-tab="fixkosten"><span>↻</span> Fixkosten</button>
+      <button class="nav-item" data-tab="transaktionen"><span>≡</span> Transaktionen</button>
+      <button class="nav-item" data-tab="import"><span>↓</span> Import</button>
+      <button class="nav-item" data-tab="einstellungen"><span>⚙</span> Einstellungen</button>
+    </nav>
+
+    <div class="filter-block">
+      <div class="filter-title">Filter</div>
+      <label class="field">
+        <span>Jahr</span>
+        <select id="f-jahr"></select>
+      </label>
+      <label class="field">
+        <span>Monat</span>
+        <select id="f-monat"></select>
+      </label>
+      <label class="field">
+        <span>Kategorie</span>
+        <select id="f-kategorie"></select>
+      </label>
+    </div>
+
+    <div class="sidebar-foot" id="bestand"></div>
+  </aside>
+
+  <main class="main">
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- ============ ÜBERSICHT ============ -->
+    <section class="tab is-active" id="tab-uebersicht">
+      <h1>Übersicht</h1>
+      <p class="lead">Einnahmen und Ausgaben tracken, kategorisieren und auswerten.</p>
+
+      <div id="u-leer" class="empty" hidden>
+        <h3>Noch keine Umsätze vorhanden</h3>
+        <p>Lade deine Kontoauszüge im Bereich <b>Import</b> hoch (CSV- oder
+           CAMT-Export der Consorsbank). Zum Ausprobieren kannst du unter
+           <b>Einstellungen</b> Demo-Daten laden.</p>
+      </div>
+
+      <div id="u-inhalt">
+        <div class="kpi-label">Gesamt im gewählten Zeitraum</div>
+        <div class="kpi-row" id="kpi-summe"></div>
+
+        <div class="kpi-label" id="kpi-schnitt-label">Pro Monat</div>
+        <div class="kpi-row" id="kpi-schnitt"></div>
+        <p class="hint" id="variabel-hinweis"></p>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Einnahmen, Ausgaben und Sparen im Vergleich</h2>
+            <div class="segmented" id="aufloesung">
+              <button data-wert="tag">Täglich</button>
+              <button data-wert="monat" class="is-active">Monatlich</button>
+              <button data-wert="jahr">Jährlich</button>
+            </div>
+          </div>
+          <div id="chart-vergleich" class="chart"></div>
+          <details class="tabelle-aufklapp">
+            <summary>Werte als Tabelle anzeigen</summary>
+            <div id="tabelle-reihen"></div>
+          </details>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h2>Saldo je Zeitraum</h2></div>
+            <p class="hint">Einnahmen abzüglich Ausgaben und Sparen.</p>
+            <div id="chart-saldo" class="chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Ausgaben nach Kategorie</h2></div>
+            <div id="chart-kategorien" class="chart"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Kategorien im Zeitverlauf</h2>
+            <div class="segmented" id="verlauf-art">
+              <button data-wert="ausgaben" class="is-active">Ausgaben</button>
+              <button data-wert="einnahmen">Einnahmen</button>
+            </div>
+          </div>
+          <div id="chart-verlauf" class="chart"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FIXKOSTEN ============ -->
+    <section class="tab" id="tab-fixkosten">
+      <h1>Fixkosten</h1>
+      <p class="lead">Wiederkehrende Zahlungen, automatisch erkannt – von dir korrigierbar.</p>
+      <div class="kpi-row" id="fx-kpi"></div>
+      <div class="card">
+        <div class="card-head"><h2>Fixkosten pro Monat</h2></div>
+        <div id="chart-fixkosten" class="chart"></div>
+        <div id="fx-tabelle"></div>
+      </div>
+      <div class="card" id="fx-sparen-karte">
+        <div class="card-head"><h2>Feste Sparbeträge</h2></div>
+        <div id="fx-sparen"></div>
+      </div>
+      <p class="hint">
+        Erkannt werden Empfänger mit wiederkehrendem, konstantem Betrag; häufig
+        besuchte Händler (z. B. Supermärkte) werden bewusst ausgeschlossen.
+        <b>Stimmt etwas nicht?</b> Setze oder entferne unter <b>Transaktionen</b>
+        das Häkchen <b>Fixkosten</b> – das gilt für alle Buchungen dieses
+        Empfängers und übersteuert die Automatik dauerhaft.
+      </p>
+    </section>
+
+    <!-- ============ TRANSAKTIONEN ============ -->
+    <section class="tab" id="tab-transaktionen">
+      <h1>Transaktionen</h1>
+      <p class="lead">
+        Änderungen gelten für <b>alle Buchungen desselben Empfängers</b> und
+        wirken sofort in allen Bereichen.
+      </p>
+      <input type="search" id="tx-suche" class="suche"
+             placeholder="Suche nach Empfänger oder Verwendungszweck …">
+      <div id="tx-tabelle"></div>
+      <p class="hint" id="tx-info"></p>
+    </section>
+
+    <!-- ============ IMPORT ============ -->
+    <section class="tab" id="tab-import">
+      <h1>Import</h1>
+      <p class="lead">Kontoumsätze aus CSV- oder CAMT-Dateien einlesen.</p>
+
+      <div class="card">
+        <div class="card-head"><h2>So exportierst du bei der Consorsbank</h2></div>
+        <ol class="schritte">
+          <li>Im Online-Banking unter <b>Umsätze</b> den Zeitraum wählen.</li>
+          <li>Export als <b>CSV</b> (oder CAMT/XML) herunterladen.</li>
+          <li>Datei hier hinzufügen – Kategorien werden automatisch zugeordnet.</li>
+        </ol>
+        <p class="hint">Duplikate werden automatisch erkannt – überlappende
+          Zeiträume kannst du gefahrlos erneut laden.</p>
+
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="datei-eingabe" multiple accept=".csv,.xml" hidden>
+          <p><b>Dateien hierher ziehen</b> oder <button class="link" id="datei-waehlen">auswählen</button></p>
+          <p class="hint" id="datei-liste">Keine Datei ausgewählt.</p>
+        </div>
+        <button class="btn btn-primary" id="import-start" disabled>Importieren</button>
+        <div id="import-ergebnis"></div>
+      </div>
+    </section>
+
+    <!-- ============ EINSTELLUNGEN ============ -->
+    <section class="tab" id="tab-einstellungen">
+      <h1>Einstellungen</h1>
+      <p class="lead">Kategorisierung steuern und Daten verwalten.</p>
+
+      <div class="card">
+        <div class="card-head"><h2>Selbstlernende Kategorisierung</h2></div>
+        <p class="hint" id="ml-status"></p>
+        <label class="schwelle">
+          Mindest-Sicherheit für automatische Zuordnung:
+          <input type="range" id="ml-schwelle" min="40" max="90" step="5" value="60">
+          <output id="ml-schwelle-wert">60 %</output>
+        </label>
+        <div class="btn-row">
+          <button class="btn btn-primary" data-aktion="modell-trainieren">Modell trainieren &amp; anwenden</button>
+          <button class="btn" data-aktion="modell-loeschen">Modell löschen</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h2>Regeln &amp; Gelerntes</h2></div>
+          <p class="hint" id="regel-status"></p>
+          <div class="btn-row">
+            <button class="btn" data-aktion="neu-kategorisieren">Regeln neu anwenden</button>
+            <button class="btn" data-aktion="gelernte-loeschen">Gelernte Regeln löschen</button>
+            <button class="btn" data-aktion="fixkosten-zuruecksetzen">Fixkosten-Entscheidungen zurücksetzen</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Daten</h2></div>
+          <p class="hint" id="daten-status"></p>
+          <div class="btn-row">
+            <button class="btn" data-aktion="demo-laden">Demo-Daten laden</button>
+            <button class="btn" data-aktion="demo-entfernen">Demo-Daten entfernen</button>
+            <a class="btn" href="/api/export.csv" download>Als CSV exportieren</a>
+            <button class="btn btn-gefahr" data-aktion="alles-loeschen">Alle Daten löschen</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="tooltip" class="tooltip" hidden></div>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

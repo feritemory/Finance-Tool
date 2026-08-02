@@ -1,7 +1,13 @@
-streamlit>=1.30
+# --- Desktop-Programm (Standard) ---
+Flask>=3.0
 pandas>=2.0
-plotly>=5.18
 PyYAML>=6.0
+# pywebview (natives Fenster) wird von den Startskripten separat installiert:
+# Schlägt es fehl, öffnet sich die App stattdessen im Browser.
+
+# --- Optional: alte Streamlit-Oberfläche (python -m streamlit run app.py) ---
+streamlit>=1.30
+plotly>=5.18
 # Lokaler, offline lernender Kategorisierungs-Klassifikator:
 scikit-learn>=1.3
 joblib>=1.3
