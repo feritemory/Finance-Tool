@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Startet das Finance-Tool. Legt beim ersten Aufruf eine virtuelle Umgebung an
-# und installiert die Abhängigkeiten.
+# Startet die OPTIONALE Streamlit-Oberfläche im Browser.
+# Das eigentliche Desktop-Programm startest du mit ./Finance-Tool.command
 set -e
 cd "$(dirname "$0")"
 
-# Python-Interpreter finden
+UMGEBUNG="${XDG_DATA_HOME:-$HOME/.local/share}/finance-tool/venv-streamlit"
+
 if command -v python3 >/dev/null 2>&1; then
   PY=python3
 elif command -v python >/dev/null 2>&1; then
@@ -14,17 +15,17 @@ else
   exit 1
 fi
 
-if [ ! -x ".venv/bin/python" ]; then
-  echo "Erstelle virtuelle Umgebung ..."
-  "$PY" -m venv .venv
+if [ ! -x "$UMGEBUNG/bin/python" ]; then
+  echo "Erstelle Arbeitsumgebung unter: $UMGEBUNG"
+  "$PY" -m venv "$UMGEBUNG"
 fi
 
-if [ ! -f ".venv/.installed" ]; then
+if [ ! -f "$UMGEBUNG/.bereit" ]; then
   echo "Installiere Abhängigkeiten ... (kann beim ersten Mal einige Minuten dauern)"
-  ./.venv/bin/python -m pip install --upgrade pip
-  ./.venv/bin/python -m pip install -r requirements.txt
-  touch .venv/.installed
+  "$UMGEBUNG/bin/python" -m pip install --upgrade pip
+  "$UMGEBUNG/bin/python" -m pip install -r requirements-streamlit.txt
+  touch "$UMGEBUNG/.bereit"
 fi
 
-echo "Starte Finance-Tool im Browser ..."
-exec ./.venv/bin/python -m streamlit run app.py
+echo "Starte Streamlit-Oberfläche im Browser ..."
+exec "$UMGEBUNG/bin/python" -m streamlit run app.py

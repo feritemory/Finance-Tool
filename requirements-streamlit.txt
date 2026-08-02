@@ -1,0 +1,10 @@
+# Nur für die optionale, alte Streamlit-Oberfläche (run.bat / run.sh).
+# Für das Desktop-Programm NICHT erforderlich.
+#
+# Achtung Windows: Streamlit bringt sehr tief verschachtelte Dateien mit. Liegt
+# das Projekt in einem langen Pfad, scheitert die Installation an der
+# 260-Zeichen-Grenze. Die Startskripte legen die virtuelle Umgebung deshalb
+# unter %LOCALAPPDATA%\Finance-Tool an.
+-r requirements.txt
+streamlit>=1.30
+plotly>=5.18

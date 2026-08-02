@@ -1,14 +1,18 @@
 @echo off
 REM ---------------------------------------------------------------------------
 REM Startet das Finance-Tool als Desktop-Programm (eigenes Fenster).
-REM Beim ersten Aufruf wird eine virtuelle Umgebung angelegt und alles Noetige
-REM installiert. Danach startet das Programm in wenigen Sekunden.
 REM
-REM Hinweis fuer Aenderungen: Verzeichnisnamen duerfen Klammern enthalten
-REM (z. B. "Ordner (1)"). Deshalb NIE %VAR% innerhalb eines Klammer-Blocks
-REM "if ... ( ... )" ausgeben - die schliessende Klammer aus dem Pfad wuerde
-REM den Block beenden und das Skript abstuerzen lassen. Stattdessen:
-REM Sprungmarken (goto) und verzoegerte Aufloesung (!VAR!).
+REM Die virtuelle Umgebung wird BEWUSST NICHT im Projektordner angelegt,
+REM sondern unter %LOCALAPPDATA%\Finance-Tool\venv. Grund: Windows begrenzt
+REM Pfade auf 260 Zeichen. Liegt das Projekt tief verschachtelt (z. B. auf dem
+REM Desktop mit langem Ordnernamen), sprengen die verschachtelten Paketdateien
+REM sonst die Grenze und die Installation bricht mit
+REM "OSError: No such file or directory" ab.
+REM
+REM Ausserdem: Verzeichnisnamen duerfen Klammern enthalten ("Ordner (1)").
+REM Deshalb NIE %VAR% innerhalb eines Klammer-Blocks "if ... ( ... )" ausgeben -
+REM die schliessende Klammer aus dem Pfad wuerde den Block beenden.
+REM Stattdessen: Sprungmarken (goto) und verzoegerte Aufloesung (!VAR!).
 REM ---------------------------------------------------------------------------
 setlocal enableextensions enabledelayedexpansion
 cd /d "%~dp0"
@@ -17,6 +21,11 @@ echo ============================================
 echo    Finance-Tool
 echo ============================================
 echo.
+
+REM --- Ort der virtuellen Umgebung (kurzer Pfad) -----------------------------
+set "UMGEBUNG=%LOCALAPPDATA%\Finance-Tool\venv"
+if not defined LOCALAPPDATA set "UMGEBUNG=%USERPROFILE%\.finance-tool\venv"
+set "VENV_PY=!UMGEBUNG!\Scripts\python.exe"
 
 REM --- Python-Interpreter finden --------------------------------------------
 set "PY="
@@ -30,17 +39,17 @@ goto :kein_python
 
 :python_ok
 REM --- Virtuelle Umgebung ----------------------------------------------------
-if exist ".venv\Scripts\python.exe" goto :venv_da
-echo Erstelle virtuelle Umgebung ...
-!PY! -m venv .venv
+if exist "!VENV_PY!" goto :venv_da
+echo Erstelle Arbeitsumgebung unter:
+echo    !UMGEBUNG!
+!PY! -m venv "!UMGEBUNG!"
 if errorlevel 1 goto :venv_fehler
-if not exist ".venv\Scripts\python.exe" goto :venv_fehler
+if not exist "!VENV_PY!" goto :venv_fehler
 
 :venv_da
-set "VENV_PY=.venv\Scripts\python.exe"
-
 REM --- Abhaengigkeiten (nur beim ersten Mal) ---------------------------------
-if exist ".venv\.desktop_bereit" goto :start
+if exist "!UMGEBUNG!\.bereit" goto :start
+echo.
 echo Installiere Abhaengigkeiten ... das kann beim ersten Mal einige Minuten dauern.
 "!VENV_PY!" -m pip install --upgrade pip
 "!VENV_PY!" -m pip install -r requirements.txt
@@ -50,7 +59,7 @@ echo.
 echo Richte natives Fenster ein ...
 "!VENV_PY!" -m pip install pywebview
 if errorlevel 1 echo Hinweis: Kein natives Fenster verfuegbar - das Programm oeffnet sich stattdessen im Browser.
-echo bereit> ".venv\.desktop_bereit"
+echo bereit> "!UMGEBUNG!\.bereit"
 
 :start
 echo.
@@ -71,16 +80,19 @@ pause
 exit /b 1
 
 :venv_fehler
-echo [FEHLER] Die virtuelle Umgebung konnte nicht erstellt werden.
-echo Loesche den Ordner ".venv" und starte Finance-Tool.bat erneut.
+echo.
+echo [FEHLER] Die Arbeitsumgebung konnte nicht erstellt werden unter:
+echo    !UMGEBUNG!
+echo Loesche diesen Ordner, falls vorhanden, und starte erneut.
 echo.
 pause
 exit /b 1
 
 :install_fehler
+echo.
 echo [FEHLER] Installation der Abhaengigkeiten fehlgeschlagen.
-echo Haeufigste Ursachen: zu langer Projektpfad oder keine Internetverbindung.
-echo Verschiebe den Ordner nach C:\Finance-Tool, loesche ".venv"
+echo Pruefe deine Internetverbindung, loesche den Ordner
+echo    !UMGEBUNG!
 echo und starte Finance-Tool.bat erneut.
 echo.
 pause

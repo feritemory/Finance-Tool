@@ -22,9 +22,17 @@ Doppelklick auf **`Finance-Tool.command`** – oder im Terminal:
 ./Finance-Tool.command
 ```
 
-Beim ersten Start werden eine virtuelle Umgebung angelegt und alle
-Abhängigkeiten installiert (das dauert einige Minuten). Danach öffnet sich das
-Programm in wenigen Sekunden in einem eigenen Fenster.
+Beim ersten Start werden eine Arbeitsumgebung angelegt und alle Abhängigkeiten
+installiert (das dauert einige Minuten). Danach öffnet sich das Programm in
+wenigen Sekunden in einem eigenen Fenster.
+
+> **Wo liegt was?** Die Arbeitsumgebung wird bewusst **ausserhalb** des
+> Projektordners angelegt – unter Windows in
+> `%LOCALAPPDATA%\Finance-Tool\venv`, sonst in
+> `~/.local/share/finance-tool/venv`. Grund: Windows begrenzt Pfade auf 260
+> Zeichen; liegt das Projekt tief verschachtelt, scheiterte die Installation
+> sonst mit `OSError: No such file or directory`. Deine Umsätze bleiben davon
+> unberührt und liegen weiterhin in `data/finance.db` im Projektordner.
 
 > **Verknüpfung auf dem Desktop:** Rechtsklick auf `Finance-Tool.bat` →
 > *Senden an* → *Desktop (Verknüpfung erstellen)*. Über *Eigenschaften* lässt
@@ -81,23 +89,27 @@ Dann ist Python nicht (richtig) installiert:
 3. Danach cmd-Fenster neu öffnen und `run.bat` erneut ausführen.
 
 **Fehler „Could not install packages due to an OSError … No such file or
-directory" beim Installieren von Streamlit/altair?**
-Das ist die **260-Zeichen-Pfadgrenze** von Windows. Dein Projektordner liegt zu
-tief verschachtelt (z. B. `C:\Users\...\Finance-Tool-claude-...\Finance-Tool-claude-...\`),
-und die tief verschachtelten Streamlit-Dateien sprengen dann das Limit.
+directory"?**
+Das war die **260-Zeichen-Pfadgrenze** von Windows: Liegt das Projekt tief
+verschachtelt, sprengten die Paketdateien in `.venv` das Limit. **Behoben** –
+zwei Änderungen waren dafür nötig:
 
-Lösung:
-1. Ordner an einen **kurzen** Pfad verschieben, z. B. `C:\Finance-Tool`.
-2. Darin den (kaputten) Unterordner `.venv` löschen.
-3. `run.bat` erneut starten.
+1. Die Arbeitsumgebung liegt jetzt unter `%LOCALAPPDATA%\Finance-Tool\venv`
+   statt im Projektordner (Basis 63 statt 151 Zeichen).
+2. Das Desktop-Programm installiert **kein Streamlit** mehr – dessen Dateien
+   waren mit Abstand die tiefsten.
 
-`run.bat` warnt inzwischen selbst, wenn der Pfad zu lang ist. Alternativ kannst
-du in Windows die lange Pfadunterstützung aktivieren (Administrator-PowerShell):
-```powershell
-New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
-  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
-```
-Danach den Rechner neu starten.
+Zusammen bleibt der längste Pfad bei rund 177 statt 285 Zeichen. Falls du noch
+eine alte, kaputte Installation im Projektordner hast, kannst du den Unterordner
+`.venv` dort gefahrlos löschen.
+
+> Sollte es je wieder eng werden: Ordner an einen kurzen Pfad verschieben
+> (z. B. `C:\Finance-Tool`) oder in Windows die lange Pfadunterstützung
+> aktivieren (Administrator-PowerShell, danach neu starten):
+> ```powershell
+> New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+>   -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+> ```
 
 **Installation hängt oder schlägt fehl?** Lösche den Ordner `.venv` und starte
 `run.bat` erneut – er baut die Umgebung dann neu auf.

@@ -4,6 +4,10 @@
 set -e
 cd "$(dirname "$0")"
 
+# Arbeitsumgebung ausserhalb des Projektordners – hält Projektpfade kurz und
+# das Projektverzeichnis frei von Installationsdateien.
+UMGEBUNG="${XDG_DATA_HOME:-$HOME/.local/share}/finance-tool/venv"
+
 if command -v python3 >/dev/null 2>&1; then
   PY=python3
 elif command -v python >/dev/null 2>&1; then
@@ -14,20 +18,20 @@ else
   exit 1
 fi
 
-if [ ! -x ".venv/bin/python" ]; then
-  echo "Erstelle virtuelle Umgebung ..."
-  "$PY" -m venv .venv
+if [ ! -x "$UMGEBUNG/bin/python" ]; then
+  echo "Erstelle Arbeitsumgebung unter: $UMGEBUNG"
+  "$PY" -m venv "$UMGEBUNG"
 fi
 
-if [ ! -f ".venv/.desktop_bereit" ]; then
+if [ ! -f "$UMGEBUNG/.bereit" ]; then
   echo "Installiere Abhängigkeiten ... (kann beim ersten Mal einige Minuten dauern)"
-  ./.venv/bin/python -m pip install --upgrade pip
-  ./.venv/bin/python -m pip install -r requirements.txt
+  "$UMGEBUNG/bin/python" -m pip install --upgrade pip
+  "$UMGEBUNG/bin/python" -m pip install -r requirements.txt
   echo "Richte natives Fenster ein ..."
-  ./.venv/bin/python -m pip install pywebview || \
+  "$UMGEBUNG/bin/python" -m pip install pywebview || \
     echo "Hinweis: Kein natives Fenster verfügbar – das Programm öffnet sich im Browser."
-  touch .venv/.desktop_bereit
+  touch "$UMGEBUNG/.bereit"
 fi
 
 echo "Starte Finance-Tool ..."
-exec ./.venv/bin/python desktop.py
+exec "$UMGEBUNG/bin/python" desktop.py
