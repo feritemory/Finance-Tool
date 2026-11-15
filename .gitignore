@@ -5,16 +5,22 @@ __pycache__/
 venv/
 env/
 *.egg-info/
+.pytest_cache/
 
-# Lokale Daten (deine echten Umsätze bleiben privat und werden NICHT eingecheckt)
-data/*.db
-data/*.csv
-data/*.pkl
+# Build-Ergebnisse (PyInstaller / Installer)
+build/
+dist/
+
+# Lokale Daten: Deine Umsätze liegen beim installierten Programm in
+# %APPDATA%\Finance-Tool – und dürfen nie ins Repository.
+data/
+*.db
+*.db.bak
+*.pkl
+Umsatz*.csv
 
 # OS / Editor
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/
-
-# Ordner behalten
-!data/.gitkeep

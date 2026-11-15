@@ -144,6 +144,25 @@ def category_over_time(df: pd.DataFrame, freq: str = "M",
 # Fixkosten-Erkennung
 # ---------------------------------------------------------------------------
 
+RHYTHMUS = {1: "monatlich", 2: "alle 2 Monate", 3: "vierteljährlich",
+            6: "halbjährlich", 12: "jährlich"}
+
+
+def _intervall_monate(daten: pd.Series) -> int:
+    """Schätzt den Zahlungsrhythmus in Monaten aus den Buchungsdaten.
+
+    Typischer Abstand zwischen den Monaten mit einer Zahlung, gerundet auf
+    1/2/3/6/12. Eine einzelne Zahlung (z. B. manuell markiert) gilt als
+    monatlich, weil sich ohne zweite Buchung kein Rhythmus ablesen lässt.
+    """
+    monate = sorted({d.year * 12 + d.month for d in daten})
+    if len(monate) < 2:
+        return 1
+    abstaende = [b - a for a, b in zip(monate, monate[1:])]
+    typisch = float(pd.Series(abstaende).median())
+    return min((1, 2, 3, 6, 12), key=lambda k: abs(k - typisch))
+
+
 def detect_recurring(df: pd.DataFrame, min_months: int = 3,
                      max_per_month: float = 1.6) -> pd.DataFrame:
     """Erkennt wiederkehrende Zahlungen (Fixkosten & feste Sparbeträge).
@@ -163,8 +182,8 @@ def detect_recurring(df: pd.DataFrame, min_months: int = 3,
     Rückgabe je Gruppe: merchant, category, monate, median_betrag, tx_ids,
                         ist_sparen, manuell
     """
-    cols = ["merchant", "category", "monate", "median_betrag", "tx_ids",
-            "ist_sparen", "manuell"]
+    cols = ["merchant", "category", "monate", "median_betrag", "intervall",
+            "rhythmus", "monatsbetrag", "tx_ids", "ist_sparen", "manuell"]
     empty = pd.DataFrame(columns=cols)
     if df.empty:
         return empty
@@ -207,12 +226,17 @@ def detect_recurring(df: pd.DataFrame, min_months: int = 3,
     def _zeile(grp: pd.DataFrame, key: str, manuell: bool) -> dict:
         first = grp.iloc[0]
         cat = grp["category"].mode().iat[0]
+        je_zahlung = float(grp["betrag"].median())
+        intervall = _intervall_monate(grp["date"])
         return {
             "merchant": clean_name(first["counterparty"], first["description"],
                                    first.get("bic") or "") or key,
             "category": cat,
             "monate": int(grp["ym"].nunique()),
-            "median_betrag": float(grp["betrag"].median()),
+            "median_betrag": je_zahlung,                 # Betrag je Zahlung
+            "intervall": intervall,                      # 1, 2, 3, 6 oder 12
+            "rhythmus": RHYTHMUS.get(intervall, f"alle {intervall} Monate"),
+            "monatsbetrag": je_zahlung / intervall,      # umgerechnet auf 1 Monat
             "tx_ids": grp["id"].tolist(),
             "ist_sparen": bool(is_saving(cat)),
             "manuell": manuell,
@@ -239,7 +263,7 @@ def detect_recurring(df: pd.DataFrame, min_months: int = 3,
     out = pd.DataFrame(results, columns=cols)
     if out.empty:
         return empty
-    return out.sort_values("median_betrag", ascending=False).reset_index(drop=True)
+    return out.sort_values("monatsbetrag", ascending=False).reset_index(drop=True)
 
 
 def monthly_fixed_costs(df: pd.DataFrame) -> float:
@@ -247,7 +271,7 @@ def monthly_fixed_costs(df: pd.DataFrame) -> float:
     rec = detect_recurring(df)
     if rec.empty:
         return 0.0
-    return float(rec.loc[~rec["ist_sparen"], "median_betrag"].sum())
+    return float(rec.loc[~rec["ist_sparen"], "monatsbetrag"].sum())
 
 
 def monthly_savings(df: pd.DataFrame) -> float:
@@ -255,7 +279,7 @@ def monthly_savings(df: pd.DataFrame) -> float:
     rec = detect_recurring(df)
     if rec.empty:
         return 0.0
-    return float(rec.loc[rec["ist_sparen"], "median_betrag"].sum())
+    return float(rec.loc[rec["ist_sparen"], "monatsbetrag"].sum())
 
 
 def available_years(df: pd.DataFrame) -> list[int]:

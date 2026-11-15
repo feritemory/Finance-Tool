@@ -7,21 +7,21 @@ from functools import lru_cache
 
 import yaml
 
+from . import paths
 from .categories import (CATEGORY_NAMES, INCOME_UNCATEGORIZED, UNCATEGORIZED,
                          is_expense, is_income)
 from .merchants import merchant_key
 
-RULES_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "config",
-    "rules.yaml",
-)
 
-
-@lru_cache(maxsize=1)
-def _load_rules_cached(mtime: float) -> dict[str, list[str]]:
-    with open(RULES_PATH, "r", encoding="utf-8") as fh:
+@lru_cache(maxsize=4)
+def _load_rules_cached(pfad: str, mtime: float) -> dict[str, list[str]]:
+    # Schlüssel = (Pfad, Änderungszeit): Bearbeitet man die Regeldatei, wird
+    # sie beim nächsten Zugriff automatisch neu eingelesen.
+    with open(pfad, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
+    # Umbenannte Kategorien aus älteren Regeldateien weiter akzeptieren.
+    if "Bafög" in data and "Bafög-Rückzahlung" not in data:
+        data["Bafög-Rückzahlung"] = data.pop("Bafög")
     # Nur bekannte Kategorien übernehmen, Stichwörter kleinschreiben.
     rules: dict[str, list[str]] = {}
     for cat in CATEGORY_NAMES:
@@ -31,12 +31,13 @@ def _load_rules_cached(mtime: float) -> dict[str, list[str]]:
 
 
 def load_rules() -> dict[str, list[str]]:
-    """Lädt die Regeln aus config/rules.yaml (mit Cache-Invalidierung bei Änderung)."""
+    """Lädt die Regeln aus der Regeldatei im Benutzerdatenordner."""
+    pfad = str(paths.rules_path())
     try:
-        mtime = os.path.getmtime(RULES_PATH)
+        mtime = os.path.getmtime(pfad)
     except OSError:
         mtime = 0.0
-    return _load_rules_cached(mtime)
+    return _load_rules_cached(pfad, mtime)
 
 
 def categorize(counterparty: str, description: str, booking_text: str,

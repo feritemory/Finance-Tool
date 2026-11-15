@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from contextlib import contextmanager
 from datetime import date
 
 import pandas as pd
 
-from . import ml
+from . import ml, paths
 from .categories import CATEGORIES, UNCATEGORIZED
 from .categorize import categorize
 from .importer import Transaction
 from .merchants import merchant_key
 
-DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
-)
-DB_PATH = os.path.join(DATA_DIR, "finance.db")
+
+def db_path() -> str:
+    """Pfad der Datenbank (im Benutzerdatenordner, siehe finance/paths.py)."""
+    return str(paths.db_path())
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS transactions (
@@ -54,8 +55,7 @@ CREATE TABLE IF NOT EXISTS merchant_rules (
 
 @contextmanager
 def _connect():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(db_path())
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -72,6 +72,52 @@ def init_db() -> None:
         for col, ddl in (("bic", "bic TEXT"),):
             if col not in existing:
                 conn.execute(f"ALTER TABLE transactions ADD COLUMN {ddl}")
+        # Umbenannte Kategorien aus älteren Versionen nachziehen.
+        for alt, neu in _UMBENANNT.items():
+            conn.execute("UPDATE transactions SET category=? WHERE category=?", (neu, alt))
+            conn.execute("UPDATE merchant_rules SET category=? WHERE category=?", (neu, alt))
+
+
+# Kategorienamen, die sich zwischen Versionen geändert haben (alt -> neu).
+_UMBENANNT = {"Bafög": "Bafög-Rückzahlung"}
+
+
+def adopt_database(quelle: str) -> dict:
+    """Übernimmt eine Datenbank aus einer älteren Version des Tools.
+
+    Die aktuelle Datenbank wird vorher als ``finance.db.bak`` gesichert. Es
+    wird geprüft, ob die Quelle wirklich eine Finance-Tool-Datenbank ist.
+    Rückgabe: {"umsaetze": n, "regeln": m, "sicherung": pfad}
+    """
+    quelle_pfad = os.path.abspath(quelle)
+    ziel = db_path()
+    if os.path.abspath(ziel) == quelle_pfad:
+        raise ValueError("Das ist bereits die aktuell verwendete Datenbank.")
+
+    try:
+        with sqlite3.connect(f"file:{quelle_pfad}?mode=ro", uri=True) as src:
+            tabellen = {r[0] for r in src.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if "transactions" not in tabellen:
+                raise ValueError("Die Datei enthält keine Umsätze des Finance-Tools.")
+            n = src.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+            m = (src.execute("SELECT COUNT(*) FROM merchant_rules").fetchone()[0]
+                 if "merchant_rules" in tabellen else 0)
+    except sqlite3.DatabaseError as exc:
+        raise ValueError(f"Keine gültige Datenbank: {exc}") from exc
+
+    sicherung = ""
+    if os.path.exists(ziel):
+        sicherung = ziel + ".bak"
+        shutil.copyfile(ziel, sicherung)
+
+    # Über die SQLite-Backup-Schnittstelle kopieren statt Datei-Kopie:
+    # sicher auch dann, wenn die Quelle gerade geöffnet ist.
+    with sqlite3.connect(f"file:{quelle_pfad}?mode=ro", uri=True) as src, \
+            sqlite3.connect(ziel) as dst:
+        src.backup(dst)
+    init_db()                       # Schema-Migration auf die übernommene DB
+    return {"umsaetze": int(n), "regeln": int(m), "sicherung": sicherung}
 
 
 def get_learned() -> dict[str, str]:

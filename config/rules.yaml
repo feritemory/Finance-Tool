@@ -17,13 +17,18 @@ Gehalt:
   - verguetung
   - vergütung
 
-Bafög:
-  - bafog
+# Rückzahlung des BAföG-Darlehens. Bei der Consorsbank erscheint sie z. B. als
+# "Bundeskasse · BUKA HALLE DARLEHEN …". Da es eine Ausgabe-Kategorie ist,
+# greift sie nur bei Abbuchungen – Erstattungen der Bundeskasse (positiv)
+# landen weiterhin bei den Einnahmen.
+Bafög-Rückzahlung:
+  - buka halle darlehen
   - bafög
+  - bafoeg
+  - bafog
+  - bundesverwaltungsamt
   - ausbildungsfoerderung
   - ausbildungsförderung
-  - studentenwerk
-  - bva
 
 Überweisung an Sparkonten:
   - trade republic

@@ -89,10 +89,12 @@ def generate(seed: int = 42, up_to: date | None = None) -> list[Transaction]:
             _d(year, month, 28), None, 1750.0, "EUR",
             "Muster GmbH", "", f"Gehalt {month:02d}/{year} Lohn/Gehalt",
             "Gutschrift Gehalt", "sample"))
-        txs.append(Transaction(
-            _d(year, month, 15), None, 452.0, "EUR",
-            "Bundesverwaltungsamt", "", "BAFOEG Ausbildungsfoerderung",
-            "Gutschrift", "sample"))
+        # BAföG-Rückzahlung: vierteljährlich an die Bundeskasse
+        if month % 3 == 1:
+            txs.append(Transaction(
+                _d(year, month, 15), None, -390.0, "EUR",
+                "Bundeskasse", "", "BUKA HALLE DARLEHEN 55201101303",
+                "Lastschrift", "sample"))
 
         # --- Fixkosten (monatlich, gleicher Betrag) ---
         for name, zweck, base, spread in HOUSING + SPORT + SAVINGS:

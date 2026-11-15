@@ -38,8 +38,9 @@ CATEGORIES: list[Category] = [
     Category("Reisen",                       "ausgabe", "#e87ba4"),   # Slot 5 magenta
     Category("Wohnkosten inkl. Internet und Handykosten", "ausgabe", "#008300", fixkosten=True),
     Category("Sport",                        "ausgabe", "#4a3aa7", fixkosten=True),
+    # Rückzahlung des BAföG-Darlehens (Bundesverwaltungsamt) – eine Ausgabe.
+    Category("Bafög-Rückzahlung",            "ausgabe", "#e34948", fixkosten=True),  # Slot 8 rot
     Category("Gehalt",                       "einnahme", "#1baf7a"),
-    Category("Bafög",                        "einnahme", "#eda100"),
     Category(INCOME_UNCATEGORIZED,           "einnahme", "#2a78d6"),
     Category("Überweisung an Sparkonten",    "sparen",   "#2a78d6", fixkosten=True),
     Category(UNCATEGORIZED,                  "ausgabe", "#9a9a94"),   # Auffang: grau
@@ -55,7 +56,7 @@ SERIES_COLORS = {
 CATEGORY_BY_NAME: dict[str, Category] = {c.name: c for c in CATEGORIES}
 CATEGORY_NAMES: list[str] = [c.name for c in CATEGORIES]
 
-# Farbzuordnung für Diagramme (Plotly)
+# Farbzuordnung für Diagramme
 COLOR_MAP: dict[str, str] = {c.name: c.farbe for c in CATEGORIES}
 
 

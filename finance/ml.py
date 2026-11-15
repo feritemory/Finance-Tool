@@ -15,9 +15,8 @@ from __future__ import annotations
 import os
 import re
 
-MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "model.pkl"
-)
+from . import paths
+
 
 # Ab dieser Wahrscheinlichkeit wird eine ML-Vorhersage übernommen.
 DEFAULT_THRESHOLD = 0.60
@@ -101,8 +100,7 @@ def train(samples: list[tuple[str, str, float]]) -> dict:
             accuracy = None
 
     pipe.fit(texts, labels, clf__sample_weight=weights)
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    joblib.dump(pipe, MODEL_PATH)
+    joblib.dump(pipe, paths.model_path())
 
     return {
         "n_samples": n,
@@ -114,11 +112,11 @@ def train(samples: list[tuple[str, str, float]]) -> dict:
 
 def load_model():
     """Lädt das trainierte Modell oder gibt None zurück (kein Modell / kein sklearn)."""
-    if not os.path.exists(MODEL_PATH) or not sklearn_available():
+    if not os.path.exists(paths.model_path()) or not sklearn_available():
         return None
     try:
         import joblib
-        return joblib.load(MODEL_PATH)
+        return joblib.load(paths.model_path())
     except Exception:  # noqa: BLE001
         return None
 
@@ -133,9 +131,9 @@ def predict(model, text: str) -> tuple[str, float]:
 
 
 def model_exists() -> bool:
-    return os.path.exists(MODEL_PATH)
+    return os.path.exists(paths.model_path())
 
 
 def delete_model() -> None:
-    if os.path.exists(MODEL_PATH):
-        os.remove(MODEL_PATH)
+    if os.path.exists(paths.model_path()):
+        os.remove(paths.model_path())

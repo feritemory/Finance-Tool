@@ -1,0 +1,59 @@
+# Baut das Finance-Tool auf einem echten Windows-Rechner von GitHub:
+# Tests -> Programm (PyInstaller) -> Selbsttest der .exe -> Installer (Inno Setup).
+# Der fertige Installer liegt danach unter "Actions" -> Lauf -> "Artifacts".
+name: Windows-Build
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Inno Setup bereitstellen
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Bauen, testen, Selbsttest, Installer
+        shell: pwsh
+        run: ./scripts/build_windows.ps1 -Arbeitsordner "$env:RUNNER_TEMP\ftb"
+
+      - name: Installer hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Finance-Tool-Setup
+          path: dist/Finance-Tool-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Selbsttest-Bericht hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Selbsttest
+          path: |
+            dist/selbsttest.txt
+            dist/selbsttest.png
+          if-no-files-found: ignore
+          retention-days: 30
