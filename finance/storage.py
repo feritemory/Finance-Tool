@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
+from pathlib import Path
 from datetime import date
 
 import pandas as pd
@@ -93,9 +94,14 @@ def adopt_database(quelle: str) -> dict:
     ziel = db_path()
     if os.path.abspath(ziel) == quelle_pfad:
         raise ValueError("Das ist bereits die aktuell verwendete Datenbank.")
+    if not os.path.isfile(quelle_pfad):
+        raise ValueError("Die gewählte Datei existiert nicht.")
+    # Nur-Lese-Zugriff per URI. Path.as_uri() erzeugt unter Windows korrekt
+    # "file:///C:/…" (Laufwerk, Schrägstriche, Sonderzeichen kodiert).
+    nur_lesen = Path(quelle_pfad).as_uri() + "?mode=ro"
 
     try:
-        with sqlite3.connect(f"file:{quelle_pfad}?mode=ro", uri=True) as src:
+        with closing(sqlite3.connect(nur_lesen, uri=True)) as src:
             tabellen = {r[0] for r in src.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             if "transactions" not in tabellen:
@@ -112,9 +118,10 @@ def adopt_database(quelle: str) -> dict:
         shutil.copyfile(ziel, sicherung)
 
     # Über die SQLite-Backup-Schnittstelle kopieren statt Datei-Kopie:
-    # sicher auch dann, wenn die Quelle gerade geöffnet ist.
-    with sqlite3.connect(f"file:{quelle_pfad}?mode=ro", uri=True) as src, \
-            sqlite3.connect(ziel) as dst:
+    # sicher auch dann, wenn die Quelle gerade geöffnet ist. Verbindungen
+    # ausdrücklich schließen – Windows hält offene Dateien sonst gesperrt.
+    with closing(sqlite3.connect(nur_lesen, uri=True)) as src, \
+            closing(sqlite3.connect(ziel)) as dst:
         src.backup(dst)
     init_db()                       # Schema-Migration auf die übernommene DB
     return {"umsaetze": int(n), "regeln": int(m), "sicherung": sicherung}
